@@ -1,69 +1,62 @@
-title: "Pi Agent 实战：从源码到复刻"
-subtitle: "基于 pi 真实源码的 Code Agent 系统设计指南"
-author: "Pi Agent 团队"
+﻿title: "Pi Agent 实战：从使用到复刻"
+subtitle: "面向前端工程师的 pi coding agent 原理、源码与自定义 harness 指南"
+author: "Pi Agent Handbook"
 lang: zh-CN
-subject: "Code Agent / AI Programming / Agent 系统架构"
+subject: "Coding Agent / TypeScript / Agent Harness / Pi"
 keywords:
-  - Code Agent
-  - AI Programming
-  - Agent Loop
-  - Tool Use
-  - Context Engineering
   - pi
-  - Claude Code
-  - Extension System
-  - Skills System
-  - MCP
+  - coding agent
+  - agent loop
+  - tools
+  - extensions
+  - skills
+  - session
+  - compaction
+  - rpc
+  - sdk
 cover:
   type: svg
   path: cover/cover.svg
-version: "2.0.0"
+version: "3.0.0"
 date: "2026-05-25"
 publisher: "Self-published"
 rights: "CC BY-NC-SA 4.0"
 isbn: ""
 
 chapters:
-  - part: "第一部分：入门"
+  - part: "第一部分：从零进入 pi"
     items:
       - chapter-00-prerequisites.md
       - chapter-01-architecture-overview.md
-  - part: "第二部分：核心模块"
+      - chapter-06-build-from-zero.md
+  - part: "第二部分：运行时核心"
     items:
       - chapter-02-agent-loop.md
       - chapter-03-tools.md
       - chapter-04-streaming-api-client.md
       - chapter-05-system-prompt.md
-      - chapter-06-build-from-zero.md
-  - part: "第三部分：上下文与持久化"
-    items:
       - chapter-07-context-engineering.md
       - chapter-08-token-and-budget.md
-      - chapter-14-session-management.md
-  - part: "第四部分：扩展生态"
-    items:
-      - chapter-10-extension-system.md
-      - chapter-13-mcp-protocol.md
-      - chapter-15-skills-and-plugins.md
-      - chapter-14-slash-commands.md
-  - part: "第五部分：安全与内存"
+  - part: "第三部分：产品能力"
     items:
       - chapter-09-permission-and-security.md
+      - chapter-10-extension-system.md
       - chapter-11-memory.md
-  - part: "第六部分：输出与协作"
+      - chapter-12-session-resume.md
+      - chapter-14-session-management.md
+      - chapter-16-slash-commands.md
+      - chapter-17-output-styles.md
+  - part: "第四部分：生态与集成"
     items:
-      - chapter-16-output-styles.md
-      - chapter-17-sub-agents.md
-  - part: "第七部分：评测与交付"
-    items:
+      - chapter-13-mcp-protocol.md
+      - chapter-15-skills-and-plugins.md
       - chapter-18-eval-and-observability.md
       - chapter-19-eval-platform-hands-on.md
       - chapter-20-deployment-and-ops.md
       - chapter-21-rl-integration.md
-      - chapter-22-interview-cheatsheet.md
   - part: "附录"
     items:
+      - chapter-22-interview-cheatsheet.md
       - chapter-23-replication-guide.md
 
 pi_repo: "D:\\chengle\\code\\repos\\pi"
-analysis_repo: "D:\\chengle\\code\\github\\claude-code-sourcemap\\analysis"
