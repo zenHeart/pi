@@ -54,10 +54,10 @@
 
 #### 3.3.2 核心模块协作与 line numbers
 
-- **模型加载与归并**：[model-registry.ts#L384](/source-code/packages/coding-agent/src/core/model-registry.ts#L384) 的 `loadModels()` 负责在启动时合并内置模型定义与用户 `models.json` 的配置。它允许通过 `compat` 字段重写 API 字段属性（如兼容老旧推理服务）。
-- **动态注册接口**：[model-registry.ts#L796](/source-code/packages/coding-agent/src/core/model-registry.ts#L796) 的 `registerProvider` 允许 TypeScript 扩展在运行时动态添加新型 Provider，赋予了 Pi 理论上可以连接任何私有大模型网关的能力。
-- **并发锁与凭证存储**：[auth-storage.ts#L462](/source-code/packages/coding-agent/src/core/auth-storage.ts#L462) 的 `getApiKey` 是核心鉴权解析函数，它在读取 OAuth Token 时会自动执行锁控制，防止多进程下刷新冲突。
-- **思考级钳制（Clamp）**：当用户在 TUI 交互中通过 Shift+Tab 键切换推理级别时，系统会调用 [agent-session.ts#L1576](/source-code/packages/coding-agent/src/core/agent-session.ts#L1576) 的 `_clampThinkingLevel`。该函数读取当前模型的元数据（Metadata），并在发起大模型请求之前，将推理深度强行 clamp 在模型允许的 budget 范围内，防范 Token 溢出。
+- **模型加载与归并**：[model-registry.ts#L384](packages/coding-agent/src/core/model-registry.ts#L384) 的 `loadModels()` 负责在启动时合并内置模型定义与用户 `models.json` 的配置。它允许通过 `compat` 字段重写 API 字段属性（如兼容老旧推理服务）。
+- **动态注册接口**：[model-registry.ts#L796](packages/coding-agent/src/core/model-registry.ts#L796) 的 `registerProvider` 允许 TypeScript 扩展在运行时动态添加新型 Provider，赋予了 Pi 理论上可以连接任何私有大模型网关的能力。
+- **并发锁与凭证存储**：[auth-storage.ts#L462](packages/coding-agent/src/core/auth-storage.ts#L462) 的 `getApiKey` 是核心鉴权解析函数，它在读取 OAuth Token 时会自动执行锁控制，防止多进程下刷新冲突。
+- **思考级钳制（Clamp）**：当用户在 TUI 交互中通过 Shift+Tab 键切换推理级别时，系统会调用 [agent-session.ts#L1576](packages/coding-agent/src/core/agent-session.ts#L1576) 的 `_clampThinkingLevel`。该函数读取当前模型的元数据（Metadata），并在发起大模型请求之前，将推理深度强行 clamp 在模型允许的 budget 范围内，防范 Token 溢出。
 
 #### 3.3.3 请求鉴权与 Token 刷新序列图
 
@@ -127,7 +127,7 @@ Pi 通过在 Client 侧强行根据 `thinkingLevelMap` 来折算并拆分 `think
 启动 Pi，使用命令行指令 `/model` 或者是快捷键 `Ctrl+P` 循环切换当前的模型，仔细观察终端底部 footer（状态栏）内关于当前所选模型名称以及对应计费预算（Token Cost）的动态变化。
 
 #### 3.6.2 原理分析题
-仔细阅读 [auth-storage.ts#L81](/source-code/packages/coding-agent/src/core/auth-storage.ts#L81) 与 [auth-storage.ts#L136](/source-code/packages/coding-agent/src/core/auth-storage.ts#L136) 的源码，解释 `AuthStorage` 在执行 `lockSync` 与异步 `lock` 时，各自传入了哪些特定的配置参数？当检测到 Lock 被 Compromised（损坏/抢占）时，系统是如何进行异常处理的？
+仔细阅读 [auth-storage.ts#L81](packages/coding-agent/src/core/auth-storage.ts#L81) 与 [auth-storage.ts#L136](packages/coding-agent/src/core/auth-storage.ts#L136) 的源码，解释 `AuthStorage` 在执行 `lockSync` 与异步 `lock` 时，各自传入了哪些特定的配置参数？当检测到 Lock 被 Compromised（损坏/抢占）时，系统是如何进行异常处理的？
 
 #### 3.6.3 扩展实践题
 在本地 `models.json` 中配置一个自定义 Provider，使其 baseUrl 指向一个本地运行的 Node.js 虚拟服务器。编写该服务器代码，当收到 Pi 携带的 `Authorization` 头部请求时，验证其是否包含预期的动态令牌，从而模拟企业内部私有 Provider 的动态 API 鉴权接入。

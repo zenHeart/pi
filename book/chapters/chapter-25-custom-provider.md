@@ -43,11 +43,11 @@
 
 ## 25.3 核心机制
 
-第一层是模型注册。`ModelRegistry` 会合并内置模型、`models.json`、扩展动态注册的 provider，并负责请求凭证解析：[model-registry.ts#L335](/source-code/packages/coding-agent/src/core/model-registry.ts#L335)。它的 `registerProvider()` 会校验 provider 配置；有 `oauth` 时注册 OAuth provider，有 `streamSimple` 时注册自定义 API stream，有 `models` 时替换该 provider 的模型列表，没有 `models` 但有 `baseUrl` 或 `headers` 时覆盖已有 provider 的请求目标。
+第一层是模型注册。`ModelRegistry` 会合并内置模型、`models.json`、扩展动态注册的 provider，并负责请求凭证解析：[model-registry.ts#L335](packages/coding-agent/src/core/model-registry.ts#L335)。它的 `registerProvider()` 会校验 provider 配置；有 `oauth` 时注册 OAuth provider，有 `streamSimple` 时注册自定义 API stream，有 `models` 时替换该 provider 的模型列表，没有 `models` 但有 `baseUrl` 或 `headers` 时覆盖已有 provider 的请求目标。
 
-第二层是 OAuth 入口。`@earendil-works/pi-ai/oauth` 从 [utils/oauth/index.ts#L55](/source-code/packages/ai/src/utils/oauth/index.ts#L55) 导出，`custom-provider.md` 定义的 OAuth 对象包含 `login()`、`refreshToken()`、`getApiKey()` 和可选 `modifyModels()`。`OAuthLoginCallbacks` 把浏览器登录、device code、手动输入和交互选择抽象成 `onAuth`、`onDeviceCode`、`onPrompt`、`onSelect`。这让 `/login corporate-ai` 能在 TUI、SDK 或 RPC 宿主中复用同一套认证逻辑。
+第二层是 OAuth 入口。`@earendil-works/pi-ai/oauth` 从 [utils/oauth/index.ts#L55](packages/ai/src/utils/oauth/index.ts#L55) 导出，`custom-provider.md` 定义的 OAuth 对象包含 `login()`、`refreshToken()`、`getApiKey()` 和可选 `modifyModels()`。`OAuthLoginCallbacks` 把浏览器登录、device code、手动输入和交互选择抽象成 `onAuth`、`onDeviceCode`、`onPrompt`、`onSelect`。这让 `/login corporate-ai` 能在 TUI、SDK 或 RPC 宿主中复用同一套认证逻辑。
 
-第三层是请求执行。SDK 创建 session 时，会让 `Agent` 的 `streamFn` 调用 `modelRegistry.getApiKeyAndHeaders(model)`，再把 `apiKey`、`headers`、重试配置、`sessionId` 传给 `streamSimple()`：[sdk.ts#L64](/source-code/packages/coding-agent/src/core/sdk.ts#L64)。这意味着 provider 不应该在 UI 层自行拼请求；它应该把鉴权和能力声明交给 registry，把协议转换交给 `streamSimple` 或内置 API adapter。
+第三层是请求执行。SDK 创建 session 时，会让 `Agent` 的 `streamFn` 调用 `modelRegistry.getApiKeyAndHeaders(model)`，再把 `apiKey`、`headers`、重试配置、`sessionId` 传给 `streamSimple()`：[sdk.ts#L64](packages/coding-agent/src/core/sdk.ts#L64)。这意味着 provider 不应该在 UI 层自行拼请求；它应该把鉴权和能力声明交给 registry，把协议转换交给 `streamSimple` 或内置 API adapter。
 
 第四层是模型能力声明。`models.md` 的 `thinkingLevelMap`、`input`、`compat`、`cost`、`contextWindow`、`maxTokens` 不只是显示字段。它们决定 thinking level 是否可选，图片是否会传给模型，缓存标记如何写入 payload，费用如何统计，溢出时是否能触发压缩恢复。
 
@@ -66,10 +66,10 @@ flowchart LR
 
 | 环节 | 系统责任 | 源码证据 | 读源码时要确认什么 |
 |---|---|---|---|
-| 模型注册表 | 内置模型 + models.json + extension provider | [model-registry.ts#L335](/source-code/packages/coding-agent/src/core/model-registry.ts#L335) | 输入从哪里来，输出交给谁，失败由哪一层裁决 |
-| 模型解析 | CLI / scoped models / saved defaults | [model-resolver.ts#L340](/source-code/packages/coding-agent/src/core/model-resolver.ts#L340) | 输入从哪里来，输出交给谁，失败由哪一层裁决 |
-| Provider Adapter | 消息、工具、流式事件归一 | [index.ts#L9](/source-code/packages/ai/src/index.ts#L9) | 输入从哪里来，输出交给谁，失败由哪一层裁决 |
-| 鉴权 | API key / OAuth / request headers | [utils/oauth/index.ts#L55](/source-code/packages/ai/src/utils/oauth/index.ts#L55) | 输入从哪里来，输出交给谁，失败由哪一层裁决 |
+| 模型注册表 | 内置模型 + models.json + extension provider | [model-registry.ts#L335](packages/coding-agent/src/core/model-registry.ts#L335) | 输入从哪里来，输出交给谁，失败由哪一层裁决 |
+| 模型解析 | CLI / scoped models / saved defaults | [model-resolver.ts#L340](packages/coding-agent/src/core/model-resolver.ts#L340) | 输入从哪里来，输出交给谁，失败由哪一层裁决 |
+| Provider Adapter | 消息、工具、流式事件归一 | [index.ts#L9](packages/ai/src/index.ts#L9) | 输入从哪里来，输出交给谁，失败由哪一层裁决 |
+| 鉴权 | API key / OAuth / request headers | [utils/oauth/index.ts#L55](packages/ai/src/utils/oauth/index.ts#L55) | 输入从哪里来，输出交给谁，失败由哪一层裁决 |
 
 **关键代码说明**
 

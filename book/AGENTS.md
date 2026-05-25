@@ -3,9 +3,9 @@
 ## 文档源码链接规范
 
 - 所有涉及源码层面的引用必须使用可点击 Markdown link，不允许把 Markdown link 包在反引号中。
-- 源码引用必须细化到具体行号，优先写成 `[file.ts#L123](/source-code/path/file.ts#L123)`。
-- 如果正文需要展示函数名，函数名可以用反引号；对应源码位置必须另给可点击链接，例如：`foo()` 见 [bar.ts#L10](/source-code/src/bar.ts#L10)。
-- 正文保持 `/source-code/...#Lx` 形式，不手写 GitHub URL。链接目标必须是当前仓库内真实文件和真实行号。
+- 源码引用必须细化到当前仓库内真实路径和具体行号，优先写成 [main.ts#L424](packages/coding-agent/src/main.ts#L424)。
+- 如果正文需要展示函数名，函数名可以用反引号；对应源码位置必须另给可点击链接，例如：`runMigrations()` 见 [migrations.ts#L305](packages/coding-agent/src/migrations.ts#L305)。
+- 正文保持仓库相对路径形式，不手写 GitHub URL，也不使用其他书籍的虚拟源码前缀。EPUB 构建会把 `packages/...#Lx` 转换为 `https://github.com/zenHeart/pi/blob/codex/pi-book-rewrite/...#Lx`。
 - 修改章节后运行 `node book/validate.js`，确认章节清单、标题编号、docs 引用和源码链接有效。
 
 ## 文档标题编号规范

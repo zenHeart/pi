@@ -32,7 +32,7 @@ const debugLogPath = getDebugLogPath();
 
 #### 调试日志路径
 
-调试日志路径由 [`config.ts#L521`](/source-code/packages/coding-agent/src/config.ts#L521) 的 `getDebugLogPath()` 决定：
+调试日志路径由 [`config.ts#L521`](packages/coding-agent/src/config.ts#L521) 的 `getDebugLogPath()` 决定：
 
 ```typescript
 export function getDebugLogPath(): string {
@@ -44,7 +44,7 @@ export function getDebugLogPath(): string {
 
 #### ResourceDiagnostic 诊断收集
 
-资源加载过程中发现的问题（命名冲突、格式错误、路径不存在）由 [`diagnostics.ts`](/source-code/packages/coding-agent/src/core/diagnostics.ts#L10) 中的 `ResourceDiagnostic` 类型表达：
+资源加载过程中发现的问题（命名冲突、格式错误、路径不存在）由 [`diagnostics.ts`](packages/coding-agent/src/core/diagnostics.ts#L10) 中的 `ResourceDiagnostic` 类型表达：
 
 ```typescript
 export interface ResourceDiagnostic {
@@ -161,7 +161,7 @@ Pi 把诊断信息（如 extension 加载错误）设计为会话事件（`type:
 
 #### 原理级训练
 
-阅读 [`interactive-mode.ts#L5378`](/source-code/packages/coding-agent/src/modes/interactive/interactive-mode.ts#L5378) 的 `handleDebugCommand()`，说明调试快照中包含的数据结构，以及为什么把 Agent 消息以 JSONL 而不是 JSON 数组格式写入。
+阅读 [`interactive-mode.ts#L5378`](packages/coding-agent/src/modes/interactive/interactive-mode.ts#L5378) 的 `handleDebugCommand()`，说明调试快照中包含的数据结构，以及为什么把 Agent 消息以 JSONL 而不是 JSON 数组格式写入。
 
 #### 扩展级训练
 

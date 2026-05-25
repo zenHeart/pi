@@ -42,9 +42,9 @@ await session.prompt("What files are in the current directory?");
 
 ## 27.3 核心机制
 
-SDK 的主入口在 [sdk.ts#L64](/source-code/packages/coding-agent/src/core/sdk.ts#L64)。`createAgentSession()` 会解析 `cwd` 和 `agentDir`，创建或复用 `AuthStorage`、`ModelRegistry`、`SettingsManager`、`SessionManager`，加载 `DefaultResourceLoader`，恢复已有 session 的模型和 thinking level，最后构造 `Agent` 与 `AgentSession`。
+SDK 的主入口在 [sdk.ts#L64](packages/coding-agent/src/core/sdk.ts#L64)。`createAgentSession()` 会解析 `cwd` 和 `agentDir`，创建或复用 `AuthStorage`、`ModelRegistry`、`SettingsManager`、`SessionManager`，加载 `DefaultResourceLoader`，恢复已有 session 的模型和 thinking level，最后构造 `Agent` 与 `AgentSession`。
 
-真正的 agent 执行由 `AgentSession` 包装：[agent-session.ts#L252](/source-code/packages/coding-agent/src/core/agent-session.ts#L252)。它暴露 `prompt()`、`steer()`、`followUp()`、`subscribe()`、`setModel()`、`setThinkingLevel()`、`compact()`、`abort()`、`executeBash()`、`navigateTree()`、`exportToHtml()` 等能力。内部则处理消息持久化、扩展事件、工具注册、自动压缩、自动重试、bash 结果入上下文和 session tree 导航。
+真正的 agent 执行由 `AgentSession` 包装：[agent-session.ts#L252](packages/coding-agent/src/core/agent-session.ts#L252)。它暴露 `prompt()`、`steer()`、`followUp()`、`subscribe()`、`setModel()`、`setThinkingLevel()`、`compact()`、`abort()`、`executeBash()`、`navigateTree()`、`exportToHtml()` 等能力。内部则处理消息持久化、扩展事件、工具注册、自动压缩、自动重试、bash 结果入上下文和 session tree 导航。
 
 事件是 SDK 的主要输出面。`packages/coding-agent/docs/sdk.md` 列出 `message_update`、`tool_execution_start`、`tool_execution_update`、`tool_execution_end`、`agent_start`、`agent_end`、`turn_start`、`turn_end`、`queue_update`、`compaction_start`、`compaction_end`、`auto_retry_start`、`auto_retry_end`。这些事件与 `packages/coding-agent/docs/json.md` 和 `packages/coding-agent/docs/rpc.md` 的事件形状保持一致，所以同一个 UI 状态机可以服务 SDK、JSON mode 和 RPC mode。
 
@@ -65,10 +65,10 @@ flowchart LR
 
 | 环节 | 系统责任 | 源码证据 | 读源码时要确认什么 |
 |---|---|---|---|
-| SDK | 同进程消费 AgentSession | [agent-session-runtime.ts#L68](/source-code/packages/coding-agent/src/core/agent-session-runtime.ts#L68) | 输入从哪里来，输出交给谁，失败由哪一层裁决 |
-| RPC | JSONL stdin/stdout 跨进程协议 | [rpc-mode.ts#L53](/source-code/packages/coding-agent/src/modes/rpc/rpc-mode.ts#L53) | 输入从哪里来，输出交给谁，失败由哪一层裁决 |
-| JSON 模式 | 结构化事件流输出 | [print-mode.ts#L104](/source-code/packages/coding-agent/src/modes/print-mode.ts#L104) | 输入从哪里来，输出交给谁，失败由哪一层裁决 |
-| 运行时服务 | 统一装配 settings/provider/resource/session | [agent-session-runtime.ts#L393](/source-code/packages/coding-agent/src/core/agent-session-runtime.ts#L393) | 输入从哪里来，输出交给谁，失败由哪一层裁决 |
+| SDK | 同进程消费 AgentSession | [agent-session-runtime.ts#L68](packages/coding-agent/src/core/agent-session-runtime.ts#L68) | 输入从哪里来，输出交给谁，失败由哪一层裁决 |
+| RPC | JSONL stdin/stdout 跨进程协议 | [rpc-mode.ts#L53](packages/coding-agent/src/modes/rpc/rpc-mode.ts#L53) | 输入从哪里来，输出交给谁，失败由哪一层裁决 |
+| JSON 模式 | 结构化事件流输出 | [print-mode.ts#L104](packages/coding-agent/src/modes/print-mode.ts#L104) | 输入从哪里来，输出交给谁，失败由哪一层裁决 |
+| 运行时服务 | 统一装配 settings/provider/resource/session | [agent-session-runtime.ts#L393](packages/coding-agent/src/core/agent-session-runtime.ts#L393) | 输入从哪里来，输出交给谁，失败由哪一层裁决 |
 
 **关键代码说明**
 

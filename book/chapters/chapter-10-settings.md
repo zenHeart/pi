@@ -67,48 +67,48 @@ graph TD
 设置系统的主要逻辑位于 `packages/coding-agent/src/core/settings-manager.ts` 中。
 
 1. **多作用域寻址**：
-   - 当 `FileSettingsStorage` 初始化时（[settings-manager.ts#L163](/source-code/packages/coding-agent/src/core/settings-manager.ts#L163)），它会使用传入的 `cwd` 和 `agentDir` 锁定两个物理路径：
-     - 全局配置路径 `globalSettingsPath`：对应 `agentDir/settings.json`（[settings-manager.ts#L166](/source-code/packages/coding-agent/src/core/settings-manager.ts#L166)）。
-     - 项目级配置路径 `projectSettingsPath`：对应当前工作目录下的 `.pi/settings.json`（[settings-manager.ts#L167](/source-code/packages/coding-agent/src/core/settings-manager.ts#L167)）。
+   - 当 `FileSettingsStorage` 初始化时（[settings-manager.ts#L163](packages/coding-agent/src/core/settings-manager.ts#L163)），它会使用传入的 `cwd` 和 `agentDir` 锁定两个物理路径：
+     - 全局配置路径 `globalSettingsPath`：对应 `agentDir/settings.json`（[settings-manager.ts#L166](packages/coding-agent/src/core/settings-manager.ts#L166)）。
+     - 项目级配置路径 `projectSettingsPath`：对应当前工作目录下的 `.pi/settings.json`（[settings-manager.ts#L167](packages/coding-agent/src/core/settings-manager.ts#L167)）。
 
 2. **深层递归合并算法**：
    - 仅仅使用浅拷贝（`Object.assign`）合并对象，会导致子对象属性（例如 `retry.provider`）被整体替换而丢失其他默认字段。
-   - `deepMergeSettings`（[settings-manager.ts#L118](/source-code/packages/coding-agent/src/core/settings-manager.ts#L118)）实现了解析合并：如果覆盖属性和原始属性都是非数组的对象类型，则进入递归分支继续深度合并；而对于数组或者基础数据类型，则直接用覆盖值替换，确保了像 `retry` 或 `compaction` 这种复杂的嵌套配置块能被优雅地局部重写。
+   - `deepMergeSettings`（[settings-manager.ts#L118](packages/coding-agent/src/core/settings-manager.ts#L118)）实现了解析合并：如果覆盖属性和原始属性都是非数组的对象类型，则进入递归分支继续深度合并；而对于数组或者基础数据类型，则直接用覆盖值替换，确保了像 `retry` 或 `compaction` 这种复杂的嵌套配置块能被优雅地局部重写。
 
 3. **物理文件并发锁控制**：
-   - 为了应对多终端或多子进程的读写冲突，`FileSettingsStorage.withLock`（[settings-manager.ts#L197](/source-code/packages/coding-agent/src/core/settings-manager.ts#L197)）封装了写入保护机制。
-   - 它在写入前，会通过 `acquireLockSyncWithRetry`（[settings-manager.ts#L170](/source-code/packages/coding-agent/src/core/settings-manager.ts#L170)）调用 `proper-lockfile` 获取独占锁。
-   - 如果锁被其他实例占用（抛出 `ELOCKED` 错误），它会启动自适应重试逻辑进行同步避让，直至最大重试次数以防死锁；在写入成功后，在 `finally` 块中安全释放文件锁（[settings-manager.ts#L221](/source-code/packages/coding-agent/src/core/settings-manager.ts#L221)）。
+   - 为了应对多终端或多子进程的读写冲突，`FileSettingsStorage.withLock`（[settings-manager.ts#L197](packages/coding-agent/src/core/settings-manager.ts#L197)）封装了写入保护机制。
+   - 它在写入前，会通过 `acquireLockSyncWithRetry`（[settings-manager.ts#L170](packages/coding-agent/src/core/settings-manager.ts#L170)）调用 `proper-lockfile` 获取独占锁。
+   - 如果锁被其他实例占用（抛出 `ELOCKED` 错误），它会启动自适应重试逻辑进行同步避让，直至最大重试次数以防死锁；在写入成功后，在 `finally` 块中安全释放文件锁（[settings-manager.ts#L221](packages/coding-agent/src/core/settings-manager.ts#L221)）。
 
 4. **遗留字段平滑迁移（Migration）**：
-   - 配置系统的迁移发生在 `migrateSettings`（[settings-manager.ts#L338](/source-code/packages/coding-agent/src/core/settings-manager.ts#L338)）中。
+   - 配置系统的迁移发生在 `migrateSettings`（[settings-manager.ts#L338](packages/coding-agent/src/core/settings-manager.ts#L338)）中。
    - 它通过模式匹配拦截旧的设置字段，将其重写为最新标准：
-     - `queueMode` 重命名为 `steeringMode`（[settings-manager.ts#L339](/source-code/packages/coding-agent/src/core/settings-manager.ts#L339)）。
-     - 旧的布尔型 `websockets` 迁移为枚举型 `transport`（[settings-manager.ts#L345](/source-code/packages/coding-agent/src/core/settings-manager.ts#L345)）。
-     - 将老版的对象形式的 `skills` 字段重塑为现代数组形式（[settings-manager.ts#L351](/source-code/packages/coding-agent/src/core/settings-manager.ts#L351)）。
-     - 将 `retry.maxDelayMs` 转换到 `retry.provider.maxRetryDelayMs` 嵌套配置中（[settings-manager.ts#L372](/source-code/packages/coding-agent/src/core/settings-manager.ts#L372)）。
+     - `queueMode` 重命名为 `steeringMode`（[settings-manager.ts#L339](packages/coding-agent/src/core/settings-manager.ts#L339)）。
+     - 旧的布尔型 `websockets` 迁移为枚举型 `transport`（[settings-manager.ts#L345](packages/coding-agent/src/core/settings-manager.ts#L345)）。
+     - 将老版的对象形式的 `skills` 字段重塑为现代数组形式（[settings-manager.ts#L351](packages/coding-agent/src/core/settings-manager.ts#L351)）。
+     - 将 `retry.maxDelayMs` 转换到 `retry.provider.maxRetryDelayMs` 嵌套配置中（[settings-manager.ts#L372](packages/coding-agent/src/core/settings-manager.ts#L372)）。
 
 ## 10.4 设计考量与折中方案
 
 #### 10.4.1 为什么采用 Sync Lock 而不是 Async Promisified Lock？
-Node.js 中操作文件通常推荐使用异步 `fs.promises`。然而，在 Pi 中，配置文件的加锁与读取却采用了 Sync Lock 方案（[settings-manager.ts#L170](/source-code/packages/coding-agent/src/core/settings-manager.ts#L170)）。
+Node.js 中操作文件通常推荐使用异步 `fs.promises`。然而，在 Pi 中，配置文件的加锁与读取却采用了 Sync Lock 方案（[settings-manager.ts#L170](packages/coding-agent/src/core/settings-manager.ts#L170)）。
 - **生命周期约束**：设置的读取往往发生在 CLI 启动阶段或状态机同步初始化的极早期（Sync bootstrapping phase）。如果配置加载是异步的，整个 Agent-core 的所有 Getter 属性和工厂方法都必须重构为异步返回（`Promise<Settings>`），这会引发严重的“异步传染性”，大幅恶化代码的可读性。
 - **折中代价**：虽然同步阻塞（Sync blocking）会导致事件循环短暂挂起数毫秒，但因为设置文件通常非常小（小于 5KB），其带来的物理磁盘 I/O 开销微乎其微。
 
 #### 10.4.2 内存快照机制与写入队列（Queueing Writes）
-为了避免频繁读写导致的性能惩罚，`SettingsManager` 在内存中持有 `globalSettings` 与 `projectSettings`（[settings-manager.ts#L247](/source-code/packages/coding-agent/src/core/settings-manager.ts#L247)）。只有在显式调用 setter 时才标记 `modifiedFields`（[settings-manager.ts#L441](/source-code/packages/coding-agent/src/core/settings-manager.ts#L441)）并排队写入磁盘。利用 `enqueueWrite`（[settings-manager.ts#L478](/source-code/packages/coding-agent/src/core/settings-manager.ts#L478)）将多次变更合并为单次串行 write 任务，极大缓解了磁盘负载。
+为了避免频繁读写导致的性能惩罚，`SettingsManager` 在内存中持有 `globalSettings` 与 `projectSettings`（[settings-manager.ts#L247](packages/coding-agent/src/core/settings-manager.ts#L247)）。只有在显式调用 setter 时才标记 `modifiedFields`（[settings-manager.ts#L441](packages/coding-agent/src/core/settings-manager.ts#L441)）并排队写入磁盘。利用 `enqueueWrite`（[settings-manager.ts#L478](packages/coding-agent/src/core/settings-manager.ts#L478)）将多次变更合并为单次串行 write 任务，极大缓解了磁盘负载。
 
 ## 10.5 常见误解与排错指南
 
 #### 10.5.1 误区：在项目设置中覆盖了配置，但是全局设置的 setter 把项目设置洗掉了
 - **现象**：在 `.pi/settings.json` 中配置了 `"theme": "nord"`，但是在 TUI 中执行修改了其他无关配置后，项目专属配置中的 `"theme"` 居然不见了或被改写了。
 - **原因**：当调用 `SettingsManager.save()` 持久化全局变量时，如果合并与写回逻辑没有区分 Scope，很容易发生把内存中合并后的最终状态直接写回到 Scope 文件的错误。
-- **排查**：Pi 在 `persistScopedSettings`（[settings-manager.ts#L497](/source-code/packages/coding-agent/src/core/settings-manager.ts#L497)）中，仅对已标记为修改的 `modifiedFields`（[settings-manager.ts#L508](/source-code/packages/coding-agent/src/core/settings-manager.ts#L508)）进行精准写入覆盖，而未修改的属性则维持原文件中的面貌，防止 Scope 之间的配置污染。
+- **排查**：Pi 在 `persistScopedSettings`（[settings-manager.ts#L497](packages/coding-agent/src/core/settings-manager.ts#L497)）中，仅对已标记为修改的 `modifiedFields`（[settings-manager.ts#L508](packages/coding-agent/src/core/settings-manager.ts#L508)）进行精准写入覆盖，而未修改的属性则维持原文件中的面貌，防止 Scope 之间的配置污染。
 
 #### 10.5.2 误区：Concurrent processes 同时读写导致 settings 文件长度变 0
 - **现象**：运行了多个 Pi terminal 实例后， settings.json 文件损坏，大小变为了 0 字节，打开报 JSON 解析错误。
 - **原因**：由于竞争条件（Race Condition），一个进程在打开文件进行 truncate 写入时被另一个进程强行抢占或读取。
-- **排查**：确保运行环境的临时目录及配置文件目录没有禁用文件系统锁定（锁文件需要写入权限）。若在没有锁支持的沙盒容器内运行，应采用 `InMemorySettingsStorage`（[settings-manager.ts#L305](/source-code/packages/coding-agent/src/core/settings-manager.ts#L305)）规避物理锁定开销。
+- **排查**：确保运行环境的临时目录及配置文件目录没有禁用文件系统锁定（锁文件需要写入权限）。若在没有锁支持的沙盒容器内运行，应采用 `InMemorySettingsStorage`（[settings-manager.ts#L305](packages/coding-agent/src/core/settings-manager.ts#L305)）规避物理锁定开销。
 
 ## 10.6 课后练习
 
@@ -116,7 +116,7 @@ Node.js 中操作文件通常推荐使用异步 `fs.promises`。然而，在 Pi 
 在项目目录的 `.pi/settings.json` 中，配置 `retry` 策略为 `maxRetries: 2`；而在全局配置中将其设为 `maxRetries: 4` 并开启 `enabled: false`。写一段 TS 验证最终合并出来的 retry 参数各字段的值是什么，检验 `deepMergeSettings` 的行为。
 
 #### 10.6.2 原理级练习
-阅读 `packages/coding-agent/src/core/settings-manager.ts` 的 `migrateSettings`（[settings-manager.ts#L338](/source-code/packages/coding-agent/src/core/settings-manager.ts#L338)）方法：
+阅读 `packages/coding-agent/src/core/settings-manager.ts` 的 `migrateSettings`（[settings-manager.ts#L338](packages/coding-agent/src/core/settings-manager.ts#L338)）方法：
 1. 请问在此处，对 `websockets` 的迁移是如何在兼顾旧版布尔型变量的同时，平滑映射为现代 `transport` 字符串枚举型的？
 2. 如果用户在旧版中同时配置了 `websockets` 与 `transport`，根据目前的代码逻辑，哪一个配置值会最终生效？
 

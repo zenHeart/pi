@@ -149,7 +149,7 @@ ANTHROPIC_API_KEY=sk-ant-xxx node --strip-types minimal-agent.ts "读取 src/ind
 
 #### 为什么 tool_use 的返回是用户消息而不是系统消息
 
-LLM 对话协议（Anthropic / OpenAI 均如此）规定：模型产生 `tool_use` 内容后，客户端需要把执行结果作为 `role: "user"` 的 `tool_result` 内容返回。这不是 Pi 的设计选择，而是模型 API 的合约。Pi 的 `convertToLlm()` 函数（[`messages.ts`](/source-code/packages/coding-agent/src/core/messages.ts#L1)）负责把 Pi 内部的 `AgentMessage` 格式转换为符合各 provider API 要求的消息格式。
+LLM 对话协议（Anthropic / OpenAI 均如此）规定：模型产生 `tool_use` 内容后，客户端需要把执行结果作为 `role: "user"` 的 `tool_result` 内容返回。这不是 Pi 的设计选择，而是模型 API 的合约。Pi 的 `convertToLlm()` 函数（[`messages.ts`](packages/coding-agent/src/core/messages.ts#L1)）负责把 Pi 内部的 `AgentMessage` 格式转换为符合各 provider API 要求的消息格式。
 
 #### 流式响应的事件类型
 

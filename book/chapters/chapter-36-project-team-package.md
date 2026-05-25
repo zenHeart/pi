@@ -28,7 +28,7 @@ Pi Package 有两种声明资源的方式：
 
 **方式二（约定目录）：不需要 manifest，Pi 自动发现**
 
-当没有 `pi` 字段时，Pi 从以下目录自动加载资源（参考 [`packages.md`](/source-code/packages/coding-agent/docs/packages.md#L158)）：
+当没有 `pi` 字段时，Pi 从以下目录自动加载资源（参考 [`packages.md`](packages/coding-agent/docs/packages.md#L158)）：
 - `extensions/`：加载 `.ts` 和 `.js` 文件
 - `skills/`：加载 `SKILL.md` 文件夹和顶级 `.md` 文件
 - `prompts/`：加载 `.md` 文件
@@ -206,7 +206,7 @@ Pi Package 通过 npm/git 版本控制，每个包是独立命名空间（不会
 
 #### 原理级训练
 
-阅读 [`packages.md`](/source-code/packages/coding-agent/docs/packages.md#L220) 的"Scope and Deduplication"部分，解释当同一个包同时出现在全局设置和项目设置时，Pi 如何决定使用哪个版本；说明 identity 判定对 npm、git 和 local path 包的差异。
+阅读 [`packages.md`](packages/coding-agent/docs/packages.md#L220) 的"Scope and Deduplication"部分，解释当同一个包同时出现在全局设置和项目设置时，Pi 如何决定使用哪个版本；说明 identity 判定对 npm、git 和 local path 包的差异。
 
 #### 扩展级训练
 

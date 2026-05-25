@@ -1,12 +1,12 @@
 title: "Pi Agent 专家之书"
 subtitle: "从终端使用到内核、扩展、模型与团队落地"
-author: "Earendil Works"
+author: "ZenHeart"
 language: "zh-CN"
 date: "2026-05-25"
 version: "5.0.0"
-publisher: "Earendil Works"
+publisher: "ZenHeart"
 description: "一本面向前端工程师的 Pi Agent 专家级教材，基于仓库源码与 docs 重写。"
-rights: "Copyright © 2026 Earendil Works"
+rights: "Copyright © 2026 ZenHeart"
 
 chapters:
   - part: "第 0 部分：建立产品心智"
@@ -68,5 +68,6 @@ chapters:
       - chapter-38-project-custom-ui.md
       - chapter-39-expert-audit.md
 
-pi_repo: "https://github.com/earendil-works/pi"
+pi_repo: "https://github.com/zenHeart/pi"
+source_ref: "codex/pi-book-rewrite"
 source_base: "../"

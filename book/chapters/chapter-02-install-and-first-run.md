@@ -37,16 +37,16 @@ Pi 的所有配置和运行时状态都保存在用户家目录的 `.pi/agent/` 
 
 #### 2.3.2 启动迁移系统（Migrations）
 
-当用户升级 Pi 并首次运行新版本时，内核会调用 `runMigrations`，代码路径为 [migrations.ts#L305](/source-code/packages/coding-agent/src/migrations.ts#L305)。它会自动调度以下子迁移器：
-- **凭证迁移**：[migrations.ts#L21](/source-code/packages/coding-agent/src/migrations.ts#L21) 的 `migrateAuthToAuthJson` 会检测是否存在老旧的 `oauth.json` 或 `settings.json` 内的 `apiKeys` 字段，将其提取后加密合并到安全的 `auth.json` 中，并将原文件重命名为 `.migrated`。
-- **会话物理路径归档**：在 v0.30.0 之前的版本中，会话 JSONL 曾被粗暴地堆放在全局 `~/.pi/agent/` 目录下。这导致并发时读写极易崩溃。[migrations.ts#L84](/source-code/packages/coding-agent/src/migrations.ts#L84) 的 `migrateSessionsFromAgentRoot` 能够读取历史会话里的 cwd 头部，自动创建项目子目录并分流迁移。
+当用户升级 Pi 并首次运行新版本时，内核会调用 `runMigrations`，代码路径为 [migrations.ts#L305](packages/coding-agent/src/migrations.ts#L305)。它会自动调度以下子迁移器：
+- **凭证迁移**：[migrations.ts#L21](packages/coding-agent/src/migrations.ts#L21) 的 `migrateAuthToAuthJson` 会检测是否存在老旧的 `oauth.json` 或 `settings.json` 内的 `apiKeys` 字段，将其提取后加密合并到安全的 `auth.json` 中，并将原文件重命名为 `.migrated`。
+- **会话物理路径归档**：在 v0.30.0 之前的版本中，会话 JSONL 曾被粗暴地堆放在全局 `~/.pi/agent/` 目录下。这导致并发时读写极易崩溃。[migrations.ts#L84](packages/coding-agent/src/migrations.ts#L84) 的 `migrateSessionsFromAgentRoot` 能够读取历史会话里的 cwd 头部，自动创建项目子目录并分流迁移。
 
 #### 2.3.3 Windows 自更新隔离（Quarantine）机制
 
 Windows 开发者的最大痛点是升级 Pi 时遇到 native DLL 文件被 Node 锁定而引发的 EBUSY 崩溃。
 Pi 的解决方案是利用隔离机制：
-- **隔离装配**：[windows-self-update.ts#L62](/source-code/packages/coding-agent/src/utils/windows-self-update.ts#L62) 的 `quarantineWindowsNativeDependencies` 函数会在启动更新前，通过 `process.report.getReport()` 检查正在被进程持有的 `.node` 动态库。
-- **文件替换**：在 [windows-self-update.ts#L43](/source-code/packages/coding-agent/src/utils/windows-self-update.ts#L43) 发现这些 native dll 后，它会将其物理重命名移入隔离区（Quarantine），然后在其原始位置留下一个干净的 DLL 副本。由于重命名操作在 Windows 上对于已打开的文件描述符是可行的，这样就释放了原始 DLL 的写锁定，从而允许 `npm install -g` 顺利写入新文件而不报冲突。
+- **隔离装配**：[windows-self-update.ts#L62](packages/coding-agent/src/utils/windows-self-update.ts#L62) 的 `quarantineWindowsNativeDependencies` 函数会在启动更新前，通过 `process.report.getReport()` 检查正在被进程持有的 `.node` 动态库。
+- **文件替换**：在 [windows-self-update.ts#L43](packages/coding-agent/src/utils/windows-self-update.ts#L43) 发现这些 native dll 后，它会将其物理重命名移入隔离区（Quarantine），然后在其原始位置留下一个干净的 DLL 副本。由于重命名操作在 Windows 上对于已打开的文件描述符是可行的，这样就释放了原始 DLL 的写锁定，从而允许 `npm install -g` 顺利写入新文件而不报冲突。
 
 #### 2.3.4 启动环境变量
 

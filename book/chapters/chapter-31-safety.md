@@ -27,7 +27,7 @@ pi --tools read -p "分析 src/index.ts"
 
 #### 工具白名单与禁用逻辑
 
-`createAgentSession()` 在 [`sdk.ts#L280`](/source-code/packages/coding-agent/src/core/sdk.ts#L280) 中处理工具过滤：
+`createAgentSession()` 在 [`sdk.ts#L280`](packages/coding-agent/src/core/sdk.ts#L280) 中处理工具过滤：
 
 ```typescript
 const defaultActiveToolNames: ToolName[] = ["read", "bash", "edit", "write"];
@@ -39,7 +39,7 @@ const initialActiveToolNames: string[] = options.tools
     : defaultActiveToolNames;
 ```
 
-CLI 层（[`main.ts#L370`](/source-code/packages/coding-agent/src/main.ts#L370)）将命令行参数转换为此选项：
+CLI 层（[`main.ts#L370`](packages/coding-agent/src/main.ts#L370)）将命令行参数转换为此选项：
 
 ```typescript
 if (parsed.noTools) {
@@ -56,7 +56,7 @@ if (parsed.tools) {
 
 #### auth.json 凭证保护
 
-[`auth-storage.ts`](/source-code/packages/coding-agent/src/core/auth-storage.ts#L53) 中的 `FileAuthStorageBackend` 在创建文件时强制设置 `0600` 权限（仅所有者可读写）：
+[`auth-storage.ts`](packages/coding-agent/src/core/auth-storage.ts#L53) 中的 `FileAuthStorageBackend` 在创建文件时强制设置 `0600` 权限（仅所有者可读写）：
 
 ```typescript
 // auth-storage.ts#L70
@@ -90,7 +90,7 @@ Pi 的设计文档明确说明：不内置"是否允许此操作"的确认弹窗
 
 #### bash 工具的工作目录检查
 
-[`bash.ts`](/source-code/packages/coding-agent/src/core/tools/bash.ts#L66) 在执行命令前，会验证工作目录是否存在：
+[`bash.ts`](packages/coding-agent/src/core/tools/bash.ts#L66) 在执行命令前，会验证工作目录是否存在：
 
 ```typescript
 try {
@@ -137,7 +137,7 @@ Pi 作为本地工具，不对运行环境做假设。它不知道自己是在 D
 
 #### 原理级训练
 
-阅读 [`auth-storage.ts`](/source-code/packages/coding-agent/src/core/auth-storage.ts#L407) 的 `refreshOAuthTokenWithLock()` 方法，解释为什么 OAuth token 刷新需要文件锁，以及在多个 Pi 实例同时刷新时锁是如何防止 token 文件损坏的。
+阅读 [`auth-storage.ts`](packages/coding-agent/src/core/auth-storage.ts#L407) 的 `refreshOAuthTokenWithLock()` 方法，解释为什么 OAuth token 刷新需要文件锁，以及在多个 Pi 实例同时刷新时锁是如何防止 token 文件损坏的。
 
 #### 扩展级训练
 

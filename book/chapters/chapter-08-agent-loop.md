@@ -105,19 +105,19 @@ stateDiagram-v2
 Pi 的核心循环逻辑由 `packages/agent` 独立承载，与具体的终端 UI（`packages/tui`）和应用实现解耦。
 
 1. **Agent 循环的底层入口**：
-   - `runAgentLoop`（[agent-loop.ts#L95](/source-code/packages/agent/src/agent-loop.ts#L95)）是状态机的底层入口。它接受初始消息、系统提示词、工具列表与事件监听器，并在其内部调用 `runAgentLoopContinue` 进行长程推理的迭代。
-   - `runAgentLoopContinue`（[agent-loop.ts#L120](/source-code/packages/agent/src/agent-loop.ts#L120)）通过 `while (true)` 结构驱动整个转向（Steering）与后续（Follow-up）消息的处理，它是整个 Agent 生命周期的“发动机”。
+   - `runAgentLoop`（[agent-loop.ts#L95](packages/agent/src/agent-loop.ts#L95)）是状态机的底层入口。它接受初始消息、系统提示词、工具列表与事件监听器，并在其内部调用 `runAgentLoopContinue` 进行长程推理的迭代。
+   - `runAgentLoopContinue`（[agent-loop.ts#L120](packages/agent/src/agent-loop.ts#L120)）通过 `while (true)` 结构驱动整个转向（Steering）与后续（Follow-up）消息的处理，它是整个 Agent 生命周期的“发动机”。
 
 2. **流式响应接收器**：
-   - `streamAssistantResponse`（[agent-loop.ts#L275](/source-code/packages/agent/src/agent-loop.ts#L275)）负责对接 `@earendil-works/pi-ai` 库，流式拉取大模型的生成结果，同时在此处拦截 `stopReason` 并抛出实时的 `message_start`、`message_update` 及 `message_end` 事件。
+   - `streamAssistantResponse`（[agent-loop.ts#L275](packages/agent/src/agent-loop.ts#L275)）负责对接 `@earendil-works/pi-ai` 库，流式拉取大模型的生成结果，同时在此处拦截 `stopReason` 并抛出实时的 `message_start`、`message_update` 及 `message_end` 事件。
 
 3. **工具调度器与并发控制**：
-   - 当模型返回的 `stopReason` 为 `toolCalls` 时，循环会调用 `executeToolCalls`（[agent-loop.ts#L373](/source-code/packages/agent/src/agent-loop.ts#L373)）。
+   - 当模型返回的 `stopReason` 为 `toolCalls` 时，循环会调用 `executeToolCalls`（[agent-loop.ts#L373](packages/agent/src/agent-loop.ts#L373)）。
    - 该方法会根据底层配置决定调用 `executeToolCallsSequential` 串行执行工具，还是调用 `executeToolCallsParallel` 展开并发运行。
    - 每一个工具调用的子生命周期，都会经过 `prepareToolCall`、`executePreparedToolCall` 及 `finalizeExecutedToolCall` 等多阶段状态监控，确保在执行出现崩溃或网络超时（Timeout）时，能够干净地把错误包装为 `isError: true` 格式的 toolResult 返回给大模型，避免状态机彻底卡住。
 
 4. **转向控制与后续队列**：
-   - `Agent` 类（[agent.ts#L166](/source-code/packages/agent/src/agent.ts#L166)）提供了状态机的对外包装。其暴露的 `steer`（[agent.ts#L264](/source-code/packages/agent/src/agent.ts#L264)）用于向当前的推理 Turn 注入插队提示，使模型在下一次迭代中调整方向；而 `followUp`（[agent.ts#L269](/source-code/packages/agent/src/agent.ts#L269)）则会将消息压入后续队列，在当前推理链路彻底 Idle 后，再拉起新一轮循环。
+   - `Agent` 类（[agent.ts#L166](packages/agent/src/agent.ts#L166)）提供了状态机的对外包装。其暴露的 `steer`（[agent.ts#L264](packages/agent/src/agent.ts#L264)）用于向当前的推理 Turn 注入插队提示，使模型在下一次迭代中调整方向；而 `followUp`（[agent.ts#L269](packages/agent/src/agent.ts#L269)）则会将消息压入后续队列，在当前推理链路彻底 Idle 后，再拉起新一轮循环。
 
 ## 8.4 设计考量与折中方案
 
@@ -127,20 +127,20 @@ Pi 的核心循环逻辑由 `packages/agent` 独立承载，与具体的终端 U
 - **状态快照（Turn Snapshot）**：每一轮推理的起止均会保存完整的 transcript 快照。这允许即使在工具调用中途进程被 Abort 中断，底层 transcript 的上下文也依旧完整、干净。
 
 #### 8.4.2 转向排队（Steering）与后续排队（Follow-up）的策略选择
-- **Steering**：在工具调用间隙插入（[agent.ts#L264](/source-code/packages/agent/src/agent.ts#L264)）。这种模式适合用于紧急纠偏（“请停止修改 utils 目录，改写 libs 目录”），避免模型顺着错误的路线把整张卡点资源消耗殆尽。
-- **Follow-up**：在当前 Turn 完全收敛（即模型不再提出任何 Tool Calls）后触发（[agent.ts#L269](/source-code/packages/agent/src/agent.ts#L269)）。这适合执行链式业务逻辑。
+- **Steering**：在工具调用间隙插入（[agent.ts#L264](packages/agent/src/agent.ts#L264)）。这种模式适合用于紧急纠偏（“请停止修改 utils 目录，改写 libs 目录”），避免模型顺着错误的路线把整张卡点资源消耗殆尽。
+- **Follow-up**：在当前 Turn 完全收敛（即模型不再提出任何 Tool Calls）后触发（[agent.ts#L269](packages/agent/src/agent.ts#L269)）。这适合执行链式业务逻辑。
 
 ## 8.5 常见误解与排错指南
 
 #### 8.5.1 误区：在状态机运行时强行修改全局设置
 - **现象**：Agent 正在流式输出时，你在后台更改了 `defaultProvider` 或 `defaultModel`，结果发现 Agent 并没有切换模型，或者抛出 `Agent is already processing` 错误。
-- **原因**：根据 [agent.ts#L328](/source-code/packages/agent/src/agent.ts#L328)，在 `activeRun` 不为空时，任何重新发起 `prompt()` 的请求都会被拦截。
-- **排查**：状态变更必须放在 `waitForIdle()`（[agent.ts#L309](/source-code/packages/agent/src/agent.ts#L309)）之后进行。如果需要动态调整，应通过 `steer()` 或在 Harnees 层面利用事件钩子（如 `before_provider_request`）修改单次 Request 的 Payload。
+- **原因**：根据 [agent.ts#L328](packages/agent/src/agent.ts#L328)，在 `activeRun` 不为空时，任何重新发起 `prompt()` 的请求都会被拦截。
+- **排查**：状态变更必须放在 `waitForIdle()`（[agent.ts#L309](packages/agent/src/agent.ts#L309)）之后进行。如果需要动态调整，应通过 `steer()` 或在 Harnees 层面利用事件钩子（如 `before_provider_request`）修改单次 Request 的 Payload。
 
 #### 8.5.2 误区：工具执行异常导致状态机永远挂起
 - **现象**：当自定义工具执行由于死循环无法退出时，终端卡住且不抛出任何事件。
 - **原因**：工具未接入 `AbortSignal` 或未设置 Timeout。
-- **排查**：检查自定义工具在 `execute` 内是否透传并监听了 `options.abortSignal`，并且在 Harness 层利用 [agent-harness.ts#L97](/source-code/packages/agent/src/harness/agent-harness.ts#L97) 的 `timeoutMs` 强制进行超时兜底。
+- **排查**：检查自定义工具在 `execute` 内是否透传并监听了 `options.abortSignal`，并且在 Harness 层利用 [agent-harness.ts#L97](packages/agent/src/harness/agent-harness.ts#L97) 的 `timeoutMs` 强制进行超时兜底。
 
 ## 8.6 课后练习
 
@@ -149,8 +149,8 @@ Pi 的核心循环逻辑由 `packages/agent` 独立承载，与具体的终端 U
 
 #### 8.6.2 原理级练习
 阅读源码 `packages/agent/src/agent-loop.ts`：
-1. 请问在 [agent-loop.ts#L451](/source-code/packages/agent/src/agent-loop.ts#L451) 的 `executeToolCallsParallel` 中，如果其中一个并发运行的工具抛出了未捕获的 Error，状态机是如何进行异常处理以防整个 Loop 卡死的？
-2. 在 [agent-loop.ts#L628](/source-code/packages/agent/src/agent-loop.ts#L628) 的 `executePreparedToolCall` 中，`abortSignal` 是如何与具体的执行体进行关联的？
+1. 请问在 [agent-loop.ts#L451](packages/agent/src/agent-loop.ts#L451) 的 `executeToolCallsParallel` 中，如果其中一个并发运行的工具抛出了未捕获的 Error，状态机是如何进行异常处理以防整个 Loop 卡死的？
+2. 在 [agent-loop.ts#L628](packages/agent/src/agent-loop.ts#L628) 的 `executePreparedToolCall` 中，`abortSignal` 是如何与具体的执行体进行关联的？
 
 #### 8.6.3 扩展级练习
 为 `Agent` 状态机开发一个插件或者修改其 core 机制，添加一个新的 `AgentEvent` 类型：`turn_pause`。

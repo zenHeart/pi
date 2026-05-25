@@ -26,6 +26,8 @@ function readMetadata() {
   const author = yaml.match(/^author:\s*"([^"]+)"/m)?.[1] ?? "Pi Agent Handbook";
   const lang =
     yaml.match(/^lang(?:uage)?:\s*([^\n]+)/m)?.[1]?.replace(/"/g, "").trim() ?? "zh-CN";
+  const piRepo = yaml.match(/^pi_repo:\s*"([^"]+)"/m)?.[1]?.replace(/\/$/, "") ?? "https://github.com/zenHeart/pi";
+  const sourceRef = yaml.match(/^source_ref:\s*"([^"]+)"/m)?.[1] ?? "codex/pi-book-rewrite";
   const lines = yaml.split(/\r?\n/);
   const chaptersBlock = [];
   const chapters = [];
@@ -57,7 +59,7 @@ function readMetadata() {
     }
   }
 
-  return { title, author, lang, chapters };
+  return { title, author, lang, piRepo, sourceRef, chapters };
 }
 
 function getChapterTitle(file) {
@@ -65,7 +67,15 @@ function getChapterTitle(file) {
   return content.match(/^#\s+(.+)$/m)?.[1] ?? file.replace(/\.md$/, "");
 }
 
-function markdownToHtml(md) {
+function normalizeHref(href, metadata) {
+  const sourceMatch = href.match(/^((?:packages|scripts|book|\.github)\/.+)#L([0-9]+)$/);
+  if (sourceMatch) {
+    return `${metadata.piRepo}/blob/${metadata.sourceRef}/${sourceMatch[1]}#L${sourceMatch[2]}`;
+  }
+  return href;
+}
+
+function markdownToHtml(md, metadata) {
   const codeBlocks = [];
   let html = md.replace(/```([^\n`]*)\n([\s\S]*?)```/g, (_match, lang, code) => {
     const token = `@@CODE_BLOCK_${codeBlocks.length}@@`;
@@ -80,7 +90,9 @@ function markdownToHtml(md) {
   html = html.replace(/^# (.*)$/gm, "<h1>$1</h1>");
   html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
   html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
-  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_match, label, href) => {
+    return `<a href="${escapeHtml(normalizeHref(href, metadata))}">${label}</a>`;
+  });
   html = html.replace(/^- (.*)$/gm, "<li>$1</li>");
   html = html.replace(/(<li>.*<\/li>\n?)+/g, "<ul>$&</ul>");
   html = html.replace(/\n\n/g, "</p><p>");
@@ -193,7 +205,7 @@ function postprocess() {
 
   for (const ch of chapters) {
     const md = readFileSync(join(CHAPTERS_DIR, ch.file), "utf-8");
-    const html = markdownToHtml(md);
+    const html = markdownToHtml(md, metadata);
     const xhtml = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE html>
 <html xmlns="http://www.w3.org/1999/xhtml">

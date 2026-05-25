@@ -31,7 +31,7 @@ pi --mode json -p "说你好"
 
 #### print-mode.ts 的双模式实现
 
-Print 模式（包含 text 和 json 子模式）由 [`print-mode.ts`](/source-code/packages/coding-agent/src/modes/print-mode.ts#L32) 的 `runPrintMode()` 函数实现。它接收一个 `AgentSessionRuntime` 和 `PrintModeOptions`，`options.mode` 决定行为：
+Print 模式（包含 text 和 json 子模式）由 [`print-mode.ts`](packages/coding-agent/src/modes/print-mode.ts#L32) 的 `runPrintMode()` 函数实现。它接收一个 `AgentSessionRuntime` 和 `PrintModeOptions`，`options.mode` 决定行为：
 
 ```typescript
 // packages/coding-agent/src/modes/print-mode.ts#L17
@@ -73,7 +73,7 @@ if (mode === "text") {
 
 #### output-guard.ts 的 stdout 劫持机制
 
-JSON 模式要求 stdout 完全干净，不能混入任何非 JSON 字符（ANSI 代码、警告信息、依赖库的日志输出）。Pi 通过 [`output-guard.ts`](/source-code/packages/coding-agent/src/core/output-guard.ts#L45) 的 `takeOverStdout()` 实现这一保障：
+JSON 模式要求 stdout 完全干净，不能混入任何非 JSON 字符（ANSI 代码、警告信息、依赖库的日志输出）。Pi 通过 [`output-guard.ts`](packages/coding-agent/src/core/output-guard.ts#L45) 的 `takeOverStdout()` 实现这一保障：
 
 ```typescript
 // packages/coding-agent/src/core/output-guard.ts#L54
@@ -159,7 +159,7 @@ stdout 劫持设计类比前端的"副作用隔离"：把框架内部的 console
 
 #### 原理级训练
 
-阅读 [`output-guard.ts`](/source-code/packages/coding-agent/src/core/output-guard.ts#L45) 的 `takeOverStdout()` 和 `restoreStdout()`，说明：何时调用 takeover，何时 restore；为什么 RPC 模式也调用 `takeOverStdout()` 而 text 模式不调用；`flushRawStdout()` 在进程退出前的作用。
+阅读 [`output-guard.ts`](packages/coding-agent/src/core/output-guard.ts#L45) 的 `takeOverStdout()` 和 `restoreStdout()`，说明：何时调用 takeover，何时 restore；为什么 RPC 模式也调用 `takeOverStdout()` 而 text 模式不调用；`flushRawStdout()` 在进程退出前的作用。
 
 #### 扩展级训练
 

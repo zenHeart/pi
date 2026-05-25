@@ -34,7 +34,7 @@
 
 #### 5.3.1 核心双队列机制
 
-在底层 Agent 的状态控制中，消息队列的分类管理位于 [agent.ts#L166](/source-code/packages/agent/src/agent.ts#L166) 的 `Agent` 类中：
+在底层 Agent 的状态控制中，消息队列的分类管理位于 [agent.ts#L166](packages/agent/src/agent.ts#L166) 的 `Agent` 类中：
 
 ```typescript
 export class Agent {
@@ -42,7 +42,7 @@ export class Agent {
 	private readonly followUpQueue: PendingMessageQueue; // 后续追加队列
 ```
 
-在 [agent.ts#L212-L213](/source-code/packages/agent/src/agent.ts#L212)，这两个队列在构造函数中被分别实例化。它们通过 `QueueMode`（`one-at-a-time` 仅保留最新一条，或 `all` 全部排队）来控制消息的漏斗合并逻辑。
+在 [agent.ts#L212-L213](packages/agent/src/agent.ts#L212)，这两个队列在构造函数中被分别实例化。它们通过 `QueueMode`（`one-at-a-time` 仅保留最新一条，或 `all` 全部排队）来控制消息的漏斗合并逻辑。
 
 #### 5.3.2 键盘中断的时序与 Safe Points（安全点）机制
 
@@ -68,10 +68,10 @@ sequenceDiagram
     Loop-->>TUI: 恢复会话一致性，退回输入草稿
 ```
 
-在 [agent-loop.ts#L451](/source-code/packages/agent/src/agent-loop.ts#L451) 的工具批量执行入口中，每一轮工具调用的前后都会密集进行 `signal?.aborted` 检测：
-1. **准备阶段拦截**：在 `prepareToolCall`（[agent-loop.ts#L562](/source-code/packages/agent/src/agent-loop.ts#L562)）中，如果检测到 `signal?.aborted` 已经为 true，则立刻短路，返回一个 `Operation aborted` 的即时失败结果，防止物理动作触发。
-2. **执行中传播**：在 `executePreparedToolCall`（[agent-loop.ts#L628](/source-code/packages/agent/src/agent-loop.ts#L628)）中，物理 `signal` 被传入具体工具的 `execute` 方法（例如启动外部 bash 进程或进行文件流重写）。当 signal 触发 abort 时，具体的工具实现会快速干掉子进程并抛出异常。
-3. **合成结果回灌**：当异常被抛出，`executePreparedToolCall` 捕获后，调用 `createToolResultMessage`（[agent-loop.ts#L727](/source-code/packages/agent/src/agent-loop.ts#L727)）为被强行中止的工具调用合成一个合法的 `toolResult`。这个合成结果会写入到当前的 `messages` 历史中，标志着本次 Assistant turn 完整收束。
+在 [agent-loop.ts#L451](packages/agent/src/agent-loop.ts#L451) 的工具批量执行入口中，每一轮工具调用的前后都会密集进行 `signal?.aborted` 检测：
+1. **准备阶段拦截**：在 `prepareToolCall`（[agent-loop.ts#L562](packages/agent/src/agent-loop.ts#L562)）中，如果检测到 `signal?.aborted` 已经为 true，则立刻短路，返回一个 `Operation aborted` 的即时失败结果，防止物理动作触发。
+2. **执行中传播**：在 `executePreparedToolCall`（[agent-loop.ts#L628](packages/agent/src/agent-loop.ts#L628)）中，物理 `signal` 被传入具体工具的 `execute` 方法（例如启动外部 bash 进程或进行文件流重写）。当 signal 触发 abort 时，具体的工具实现会快速干掉子进程并抛出异常。
+3. **合成结果回灌**：当异常被抛出，`executePreparedToolCall` 捕获后，调用 `createToolResultMessage`（[agent-loop.ts#L727](packages/agent/src/agent-loop.ts#L727)）为被强行中止的工具调用合成一个合法的 `toolResult`。这个合成结果会写入到当前的 `messages` 历史中，标志着本次 Assistant turn 完整收束。
 
 ## 5.4 设计考量与折中方案
 
@@ -98,7 +98,7 @@ sequenceDiagram
 启动交互模式，提交指令：`!sleep 10 && echo 'done'`。在此长任务运行期间，观察 TUI 的加载动画。按下 `Escape` 键中断它，验证任务是否立刻中止，且控制台是否输出了 `Interrupted` 或 synthetic error 信息。
 
 #### 5.6.2 原理级练习
-仔细阅读 [agent-loop.ts#L628](/source-code/packages/agent/src/agent-loop.ts#L628) 的 `executePreparedToolCall` 及 [agent-loop.ts#L727](/source-code/packages/agent/src/agent-loop.ts#L727) 的 `createToolResultMessage` 实现。请回答：
+仔细阅读 [agent-loop.ts#L628](packages/agent/src/agent-loop.ts#L628) 的 `executePreparedToolCall` 及 [agent-loop.ts#L727](packages/agent/src/agent-loop.ts#L727) 的 `createToolResultMessage` 实现。请回答：
 1. 当 Abort 信号触发导致物理工具抛出 Error 时，合成 `toolResult` 是如何被填入 content 的？
 2. 为什么在并发执行工具模式下（`executeToolCallsParallel`），捕获到 `signal?.aborted` 后需要先 `break` 循环而不是直接抛错？
 

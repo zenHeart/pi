@@ -39,7 +39,7 @@ Pi 被设计为一个 **最小化终端编码脚手架（Minimal Terminal Coding
   - 内置工具集范围：`read`、`edit`、`write`、`bash`、`grep`、`find`、`ls`。
   - 四大入口形态：Interactive, Print/Json, RPC, SDK。
 - **不讲的问题**：用户会盲目期待内置 MCP、后台 bash 等不属于内核的功能，无法做出清晰的架构选型。
-- **落点源码**：[packages/coding-agent/src/main.ts#L424](/source-code/packages/coding-agent/src/main.ts#L424)、[packages/agent/src/agent.ts#L166](/source-code/packages/agent/src/agent.ts#L166)。
+- **落点源码**：[packages/coding-agent/src/main.ts#L424](packages/coding-agent/src/main.ts#L424)、[packages/agent/src/agent.ts#L166](packages/agent/src/agent.ts#L166)。
 - **图表与例程**：Mermaid 展现 CLI 启动后分发到交互/打印/RPC/JSON 模式的数据分流图。
 - **练习**：
   - *使用级*：运行 `pi -p` 并通过管道传入代码文件，完成只读分析。
@@ -53,7 +53,7 @@ Pi 被设计为一个 **最小化终端编码脚手架（Minimal Terminal Coding
   - 核心设计权衡：为什么不内置 MCP、sub-agent、permission popups、plan mode、todos、background bash。
   - 安全原则：第三方 package 执行本地代码，所有 runtime 差异均在用户空间隔离。
 - **不讲的问题**：用户写扩展时会在错误的地方引入依赖，破坏 Pi 核心的可升级性。
-- **落点源码**：[packages/coding-agent/src/core/resource-loader.ts#L28](/source-code/packages/coding-agent/src/core/resource-loader.ts#L28)。
+- **落点源码**：[packages/coding-agent/src/core/resource-loader.ts#L28](packages/coding-agent/src/core/resource-loader.ts#L28)。
 - **图表与例程**：对比表展示“核心内核职责” vs “扩展资源职责”。
 - **练习**：
   - *使用级*：在本地项目中创建一个 `.pi` 目录，验证项目级规则覆盖。
@@ -73,7 +73,7 @@ Pi 被设计为一个 **最小化终端编码脚手架（Minimal Terminal Coding
   - 离线环境与防静默升级控制：`PI_OFFLINE`、`PI_SKIP_VERSION_CHECK`、`PI_TELEMETRY` 环境变量。
   - Windows 环境下的 Git Bash/PowerShell 路径配置。
 - **不讲的问题**：新手在配置多开发环境时，因凭证冲突、离线失败、PATH 丢失导致无法运行。
-- **落点源码**：[packages/coding-agent/src/config.ts#L472](/source-code/packages/coding-agent/src/config.ts#L472)、[packages/coding-agent/src/utils/windows-self-update.ts#L43](/source-code/packages/coding-agent/src/utils/windows-self-update.ts#L43)。
+- **落点源码**：[packages/coding-agent/src/config.ts#L472](packages/coding-agent/src/config.ts#L472)、[packages/coding-agent/src/utils/windows-self-update.ts#L43](packages/coding-agent/src/utils/windows-self-update.ts#L43)。
 - **图表与例程**：状态目录 `~/.pi/agent/` 文件夹树状结构图与文件解释。
 - **练习**：
   - *使用级*：使用 `PI_OFFLINE=1` 启动 Pi，观察离线启动的行为。
@@ -88,7 +88,7 @@ Pi 被设计为一个 **最小化终端编码脚手架（Minimal Terminal Coding
   - ModelRegistry 加载与合并逻辑。
   - 限制 Thinking 级别：`clampThinkingLevel` 对思考 Token 消耗与模型能力的约束。
 - **不讲的问题**：无法排查鉴权失效、多模型环境下 Key 污染、Thinking 级别溢出导致的扣费爆炸。
-- **落点源码**：[packages/coding-agent/src/core/model-registry.ts#L333](/source-code/packages/coding-agent/src/core/model-registry.ts#L333)、[packages/coding-agent/src/core/auth-storage.ts#L53](/source-code/packages/coding-agent/src/core/auth-storage.ts#L53)。
+- **落点源码**：[packages/coding-agent/src/core/model-registry.ts#L333](packages/coding-agent/src/core/model-registry.ts#L333)、[packages/coding-agent/src/core/auth-storage.ts#L53](packages/coding-agent/src/core/auth-storage.ts#L53)。
 - **图表与例程**：鉴权凭证解析优先级时序图。
 - **练习**：
   - *使用级*：使用 `/model` 菜单切换不同 Provider 模型。
@@ -102,7 +102,7 @@ Pi 被设计为一个 **最小化终端编码脚手架（Minimal Terminal Coding
   - 终端输入框（Editor）的高级特性：`@file` fuzzy 匹配补全、图片剪贴板粘贴、`!` 与 `!!` 运行本地 bash。
   - 状态同步与 AppStateStore：Cwd、Token 数、消耗金额（Cost）、上下文窗口比例的计算。
 - **不讲的问题**：用户只会打字聊天，无法有效利用多模态、快捷键和 `@file` 上下文注入。
-- **落点源码**：[packages/coding-agent/src/modes/interactive/interactive-mode.ts#L680](/source-code/packages/coding-agent/src/modes/interactive/interactive-mode.ts#L680)、[packages/tui/src/tui.ts#L1320](/source-code/packages/tui/src/tui.ts#L1320)。
+- **落点源码**：[packages/coding-agent/src/modes/interactive/interactive-mode.ts#L680](packages/coding-agent/src/modes/interactive/interactive-mode.ts#L680)、[packages/tui/src/tui.ts#L1320](packages/tui/src/tui.ts#L1320)。
 - **图表与例程**：TUI 视口网格与状态层级关系图。
 - **练习**：
   - *使用级*：使用 `@` 搜索并注入当前项目的 3 个关键文件进入 Prompt。
@@ -116,7 +116,7 @@ Pi 被设计为一个 **最小化终端编码脚手架（Minimal Terminal Coding
   - 中断信号传递：`Escape` 键如何触发底层 `AbortController` 并在 stdout 安全输出 `Interrupted` 消息。
   - 队列安全点（Safe Points）：为什么不能在 Tool 运行时立刻抹除数据，中断后如何回灌 `tool_result` 保证会话格式完整。
 - **不讲的问题**：无法理解“打断”对正在运行的本地 bash 命令和 LLM 调用的不同物理效果，导致历史状态破坏。
-- **落点源码**：[packages/agent/src/agent.ts#L166](/source-code/packages/agent/src/agent.ts#L166)、[packages/agent/src/agent-loop.ts#L450](/source-code/packages/agent/src/agent-loop.ts#L450)。
+- **落点源码**：[packages/agent/src/agent.ts#L166](packages/agent/src/agent.ts#L166)、[packages/agent/src/agent-loop.ts#L450](packages/agent/src/agent-loop.ts#L450)。
 - **图表与例程**：`Escape` 触发中断并回灌合成 tool_result 的时序图。
 - **练习**：
   - *使用级*：在一个长时间运行的 bash 任务中按下 `Escape`，观测中断发生及本地进程终止。
@@ -130,7 +130,7 @@ Pi 被设计为一个 **最小化终端编码脚手架（Minimal Terminal Coding
   - 管道与 Stdin 读取：`readPipedStdin()` 在 TTY 与 non-TTY 下的区别。
   - 只读审查模式配置：通过 `--tools read,grep,find,ls` 实现安全的代码扫描，杜绝写操作。
 - **不讲的问题**：无法在 Webhook、CI 脚本或外部程序中安全、无死锁地调用 Pi。
-- **落点源码**：[packages/coding-agent/src/cli/args.ts#L74](/source-code/packages/coding-agent/src/cli/args.ts#L74)、[packages/coding-agent/src/main.ts#L637](/source-code/packages/coding-agent/src/main.ts#L637)。
+- **落点源码**：[packages/coding-agent/src/cli/args.ts#L74](packages/coding-agent/src/cli/args.ts#L74)、[packages/coding-agent/src/main.ts#L637](packages/coding-agent/src/main.ts#L637)。
 - **图表与例程**：管道输入 -> 模式判定 -> CLI 解析 -> stdout 返回数据流图。
 - **练习**：
   - *使用级*：在一行 shell 中通过 `cat file.js | pi -p "explain this"` 运行 Pi 并获得返回。
@@ -150,7 +150,7 @@ Pi 被设计为一个 **最小化终端编码脚手架（Minimal Terminal Coding
   - `bash` 执行：输出 tailing 截断与临时文件全量保留机制（`OutputAccumulator`）。
   - 工具调用原子队列：`file-mutation-queue.ts` 解决多重写入冲突。
 - **不讲的问题**：无法理解编辑冲突为什么发生、为何大文件只读了前 800 行、无法调试 fuzz 编辑失败。
-- **落点源码**：[packages/coding-agent/src/core/tools/edit.ts#L50](/source-code/packages/coding-agent/src/core/tools/edit.ts#L50)、[packages/coding-agent/src/core/tools/output-accumulator.ts#L30](/source-code/packages/coding-agent/src/core/tools/output-accumulator.ts#L30)。
+- **落点源码**：[packages/coding-agent/src/core/tools/edit.ts#L50](packages/coding-agent/src/core/tools/edit.ts#L50)、[packages/coding-agent/src/core/tools/output-accumulator.ts#L30](packages/coding-agent/src/core/tools/output-accumulator.ts#L30)。
 - **图表与例程**：编辑工具进行行匹配替换的状态转移图。
 - **练习**：
   - *使用级*：让 Pi 对一个空文件运行 `write`，再对其进行局部 `edit`。
@@ -166,7 +166,7 @@ Pi 被设计为一个 **最小化终端编码脚手架（Minimal Terminal Coding
   - 并发执行 vs 串行执行的判定逻辑（`parallel` vs `sequential`）。
   - LLM 中止原因（Stop Reason）解析：`stop`、`length`、`tool_use`、`aborted`。
 - **不讲的问题**：不理解为什么一轮提问会产生数十轮模型工具调用，无法解释 Streaming 断连与状态回溯。
-- **落点源码**：[packages/agent/src/agent-loop.ts#L95](/source-code/packages/agent/src/agent-loop.ts#L95)、[packages/agent/src/harness/agent-harness.ts#L100](/source-code/packages/agent/src/harness/agent-harness.ts#L100)。
+- **落点源码**：[packages/agent/src/agent-loop.ts#L95](packages/agent/src/agent-loop.ts#L95)、[packages/agent/src/harness/agent-harness.ts#L100](packages/agent/src/harness/agent-harness.ts#L100)。
 - **图表与例程**：Agent Loop 事务状态机转移全景图（含异常处理与流重试路径）。
 - **练习**：
   - *使用级*：在交互界面输入一个同时触发 3 个并行 bash 操作的请求，观察执行状态。
@@ -180,7 +180,7 @@ Pi 被设计为一个 **最小化终端编码脚手架（Minimal Terminal Coding
   - `buildSystemPrompt` 模块化拼接器：整合基础提示词、系统环境变量、时间、cwd、已启用 skills 与 extensions 描述。
   - 配置覆写：`~/.pi/SYSTEM.md` 与 `.pi/APPEND_SYSTEM.md`。
 - **不讲的问题**：规则文件写在项目里，Agent 却因为查找路径溢出或覆盖顺序错误而不遵守。
-- **落点源码**：[packages/coding-agent/src/core/system-prompt.ts#L25](/source-code/packages/coding-agent/src/core/system-prompt.ts#L25)、[packages/agent/src/harness/system-prompt.ts#L10](/source-code/packages/agent/src/harness/system-prompt.ts#L10)。
+- **落点源码**：[packages/coding-agent/src/core/system-prompt.ts#L25](packages/coding-agent/src/core/system-prompt.ts#L25)、[packages/agent/src/harness/system-prompt.ts#L10](packages/agent/src/harness/system-prompt.ts#L10)。
 - **图表与例程**：System Prompt 动态装配流水线图。
 - **练习**：
   - *使用级*：创建一个 `CLAUDE.md`，规定只使用 pnpm，观察 Pi 是否遵循。
@@ -194,7 +194,7 @@ Pi 被设计为一个 **最小化终端编码脚手架（Minimal Terminal Coding
   - 设置写入排队锁：防止并发写入破坏 settings.json 文件。
   - 核心可配项：models、thinking、themes、compaction、packages 等。
 - **不讲的问题**：项目设置被全局设置静默覆盖，或因高并发写入导致配置文件损坏。
-- **落点源码**：[packages/coding-agent/src/core/settings-manager.ts#L166](/source-code/packages/coding-agent/src/core/settings-manager.ts#L166)。
+- **落点源码**：[packages/coding-agent/src/core/settings-manager.ts#L166](packages/coding-agent/src/core/settings-manager.ts#L166)。
 - **图表与例程**：7级配置优先级金字塔图。
 - **练习**：
   - *使用级*：通过 `/settings` 更改本地 UI 主题，验证 global settings.json 已持久化。
@@ -213,7 +213,7 @@ Pi 被设计为一个 **最小化终端编码脚手架（Minimal Terminal Coding
   - Entry 多类型解析：`message`、`model_change`、`thinking_level_change`、`compaction`、`branch_summary`、`label`、`session_info`。
   - 关系连接：每个 Entry 通过 `id` 和 `parentId` 形成一个隐式的单向链表或多叉树。
 - **不讲的问题**：将会话当成简单的 linear chat log，无法解释多分支文件是如何在一个 JSONL 里安全并存的。
-- **落点源码**：[packages/agent/src/harness/session/jsonl-storage.ts#L20](/source-code/packages/agent/src/harness/session/jsonl-storage.ts#L20)、[packages/agent/src/harness/session/session.ts#L10](/source-code/packages/agent/src/harness/session/session.ts#L10)。
+- **落点源码**：[packages/agent/src/harness/session/jsonl-storage.ts#L20](packages/agent/src/harness/session/jsonl-storage.ts#L20)、[packages/agent/src/harness/session/session.ts#L10](packages/agent/src/harness/session/session.ts#L10)。
 - **图表与例程**：JSONL 文件结构与实体多叉树模型对照图。
 - **练习**：
   - *使用级*：手动打开 `~/.pi/agent/sessions/` 下的某个 jsonl 文件，阅读并写出其生命线。
@@ -227,7 +227,7 @@ Pi 被设计为一个 **最小化终端编码脚手架（Minimal Terminal Coding
   - In-file Branching vs Out-of-file Cloning 区别。
   - `AgentSessionRuntime` 生命周期绑定：切换/分叉会话时，如何优雅 teardown 并在新 cwd 重启所有绑定服务。
 - **不讲的问题**：不理解多分支跳转，在复杂 Bug 修复时，总是从头新建会话，流失大量 Prompt Cache 余额。
-- **落点源码**：[packages/coding-agent/src/core/agent-session-runtime.ts#L187](/source-code/packages/coding-agent/src/core/agent-session-runtime.ts#L187)、[packages/coding-agent/src/core/session-manager.ts#L500](/source-code/packages/coding-agent/src/core/session-manager.ts#L500)。
+- **落点源码**：[packages/coding-agent/src/core/agent-session-runtime.ts#L187](packages/coding-agent/src/core/agent-session-runtime.ts#L187)、[packages/coding-agent/src/core/session-manager.ts#L500](packages/coding-agent/src/core/session-manager.ts#L500)。
 - **图表与例程**：分支跳转与 Runtime 重生生命周期状态图。
 - **练习**：
   - *使用级*：通过 `/tree` 选择历史节点，进行分叉（`/fork`），并在新分支提交不同指令。
@@ -242,7 +242,7 @@ Pi 被设计为一个 **最小化终端编码脚手架（Minimal Terminal Coding
   - Reactive Recovery 413 处理：与 Proactive 机制的协作；连续压缩失败的 3 次熔断门限。
   - 摘要条目（Compaction Entry）的数据结构：Goal, Constraints, Decisions, File Mutations, preserved tail.
 - **不讲的问题**：随着轮次增加，Token 突然溢出导致模型报错；或者压缩时误切断 `tool_use` 与 `tool_result` 破坏 JSON schema。
-- **落点源码**：[packages/agent/src/harness/compaction/compaction.ts#L95](/source-code/packages/agent/src/harness/compaction/compaction.ts#L95)、[packages/coding-agent/src/core/compaction/compaction.ts#L120](/source-code/packages/coding-agent/src/core/compaction/compaction.ts#L120)。
+- **落点源码**：[packages/agent/src/harness/compaction/compaction.ts#L95](packages/agent/src/harness/compaction/compaction.ts#L95)、[packages/coding-agent/src/core/compaction/compaction.ts#L120](packages/coding-agent/src/core/compaction/compaction.ts#L120)。
 - **图表与例程**：4 阶段压缩渐进降级管道逻辑图。
 - **练习**：
   - *使用级*：在大长会话中手动运行 `/compact` 并指定压缩指令，观察 footer token 的变化。
@@ -256,7 +256,7 @@ Pi 被设计为一个 **最小化终端编码脚手架（Minimal Terminal Coding
   - 分享命令 `/share`：基于 GitHub CLI 发送 Gist 并生成 share viewer 路由。
   - `exportToHtml` 模板与 Vendor 依赖：静态文件的安全沙箱（XSS 过滤与 HTML 字符清洗）。
 - **不讲的问题**：无法导出精美的代码审查轨迹；在公开网络分享时泄露本地敏感变量。
-- **落点源码**：[packages/coding-agent/src/core/export-html/index.ts#L30](/source-code/packages/coding-agent/src/core/export-html/index.ts#L30)。
+- **落点源码**：[packages/coding-agent/src/core/export-html/index.ts#L30](packages/coding-agent/src/core/export-html/index.ts#L30)。
 - **图表与例程**：会话分享的资产流向与 GitHub 交互图。
 - **练习**：
   - *使用级*：运行 `/export html`，在浏览器中查看带有代码块渲染和折叠折叠的会话。
@@ -275,7 +275,7 @@ Pi 被设计为一个 **最小化终端编码脚手架（Minimal Terminal Coding
   - 多维目录扫描与资源来源分类：Global, Project, CLI, Conventional packages.
   - 资源标识与命名冲突检测：`sourceInfo`、`scope`、`origin` 机制。
 - **不讲的问题**：配置了多个扩展包或同名 prompt 时，出现覆盖冲突，排查不出来生效的到底是哪一个。
-- **落点源码**：[packages/coding-agent/src/core/resource-loader.ts#L152](/source-code/packages/coding-agent/src/core/resource-loader.ts#L152)。
+- **落点源码**：[packages/coding-agent/src/core/resource-loader.ts#L152](packages/coding-agent/src/core/resource-loader.ts#L152)。
 - **图表与例程**：ResourceLoader 路径扫描与资源树合并示意图。
 - **练习**：
   - *使用级*：运行 `/reload` 并观察控制台输出的已加载 Prompt、Theme 与 Extensions 列表。
@@ -289,7 +289,7 @@ Pi 被设计为一个 **最小化终端编码脚手架（Minimal Terminal Coding
   - Slash 命令注册：如何根据文件名生成 TUI 控制台的 `/template` 命令。
   - 参数模板替换算法：`$1`、`$2`、`$@`（全参数）的展开机制。
 - **不讲的问题**：由于缺乏 Frontmatter 配置，导致 TUI 输入栏无法对命令参数进行补全和语法验证。
-- **落点源码**：[packages/agent/src/harness/prompt-templates.ts#L10](/source-code/packages/agent/src/harness/prompt-templates.ts#L10)、[packages/coding-agent/src/core/prompt-templates.ts#L20](/source-code/packages/coding-agent/src/core/prompt-templates.ts#L20)。
+- **落点源码**：[packages/agent/src/harness/prompt-templates.ts#L10](packages/agent/src/harness/prompt-templates.ts#L10)、[packages/coding-agent/src/core/prompt-templates.ts#L20](packages/coding-agent/src/core/prompt-templates.ts#L20)。
 - **图表与例程**：Markdown 模板转换到 Slash Command 的解析状态图。
 - **练习**：
   - *使用级*：在本地编写一个 `review-diff.md`，使用 `$1` 接收指定文件并对 diff 进行针对性 review。
@@ -303,7 +303,7 @@ Pi 被设计为一个 **最小化终端编码脚手架（Minimal Terminal Coding
   - 自动发现：如何把技能简短的名称与描述，提前塞入 system prompt。
   - 按需展开（Progressive Disclosure）：为什么不在启动时把技能内容全部塞进 prompt，而只在模型调用 `/skill:name` 时才读取 `SKILL.md` 全文。
 - **不讲的问题**：技能包设计不合理导致启动时 Prompt Context 撑满；或者模型不知道有此技能，无法主动触发。
-- **落点源码**：[packages/agent/src/harness/skills.ts#L10](/source-code/packages/agent/src/harness/skills.ts#L10)、[packages/coding-agent/src/core/skills.ts#L20](/source-code/packages/coding-agent/src/core/skills.ts#L20)。
+- **落点源码**：[packages/agent/src/harness/skills.ts#L10](packages/agent/src/harness/skills.ts#L10)、[packages/coding-agent/src/core/skills.ts#L20](packages/coding-agent/src/core/skills.ts#L20)。
 - **图表与例程**：Skill 的 Progressive Disclosure 生命周期时序图（Harness vs Model）。
 - **练习**：
   - *使用级*：定义一个用于重构代码的 `refactor-guide` 技能，通过 `/skill:refactor-guide` 查看其内容。
@@ -317,7 +317,7 @@ Pi 被设计为一个 **最小化终端编码脚手架（Minimal Terminal Coding
   - `ExtensionAPI` 对象核心能力：注册 event handlers, tools, commands, shortcuts, flags, message renderers, providers。
   - 生命周期：同步/异步 Factory 执行；冷启动阶段 runtime 会 await 所有的异步工厂完成。
 - **不讲的问题**：由于不了解工厂生命周期，导致扩展在初始化之前就去拦截未注册的事件，产生空指针异常。
-- **落点源码**：[packages/coding-agent/src/core/extensions/types.ts#L100](/source-code/packages/coding-agent/src/core/extensions/types.ts#L100)、[packages/coding-agent/src/core/extensions/loader.ts#L200](/source-code/packages/coding-agent/src/core/extensions/loader.ts#L200)。
+- **落点源码**：[packages/coding-agent/src/core/extensions/types.ts#L100](packages/coding-agent/src/core/extensions/types.ts#L100)、[packages/coding-agent/src/core/extensions/loader.ts#L200](packages/coding-agent/src/core/extensions/loader.ts#L200)。
 - **图表与例程**：扩展工厂加载与注入 `ExtensionAPI` 的流程图。
 - **练习**：
   - *使用级*：在项目中编写一个最简 extension.ts，启动时向 REPL 输出一条欢迎语。
@@ -332,7 +332,7 @@ Pi 被设计为一个 **最小化终端编码脚手架（Minimal Terminal Coding
   - 中断保护：`session_shutdown` 前置事件如何取消后续异步循环。
   - 避免 Stale Runtime：会话切换后旧 runtime 销毁，扩展如何解除事件绑定，防内存泄漏。
 - **不讲的问题**：写出时序错误的扩展，或在会话切换后，旧扩展事件仍强行控制新 runtime 的状态，导致崩溃。
-- **落点源码**：[packages/coding-agent/src/core/extensions/runner.ts#L100](/source-code/packages/coding-agent/src/core/extensions/runner.ts#L100)、[packages/coding-agent/src/core/extensions/types.ts#L300](/source-code/packages/coding-agent/src/core/extensions/types.ts#L300)。
+- **落点源码**：[packages/coding-agent/src/core/extensions/runner.ts#L100](packages/coding-agent/src/core/extensions/runner.ts#L100)、[packages/coding-agent/src/core/extensions/types.ts#L300](packages/coding-agent/src/core/extensions/types.ts#L300)。
 - **图表与例程**：核心事件（Context -> Request -> Tool -> Result）的级联拦截与修改时序图。
 - **练习**：
   - *使用级*：捕获 `message_added` 事件，过滤内容并在 Footer 展示提示。
@@ -346,7 +346,7 @@ Pi 被设计为一个 **最小化终端编码脚手架（Minimal Terminal Coding
   - 自定义命令 `registerCommand()`：注册 `/command`，解构 `commandContext` 以读取会话状态。
   - 自定义 CLI 标志 `registerFlag()` 拦截参数。
 - **不讲的问题**：工具描述写得不准导致模型幻觉、参数格式验证不严格导致本地执行注入漏洞。
-- **落点源码**：[packages/coding-agent/src/core/extensions/runner.ts#L500](/source-code/packages/coding-agent/src/core/extensions/runner.ts#L500)、[packages/coding-agent/src/core/tools/index.ts#L10](/source-code/packages/coding-agent/src/core/tools/index.ts#L10)。
+- **落点源码**：[packages/coding-agent/src/core/extensions/runner.ts#L500](packages/coding-agent/src/core/extensions/runner.ts#L500)、[packages/coding-agent/src/core/tools/index.ts#L10](packages/coding-agent/src/core/tools/index.ts#L10)。
 - **图表与例程**：自定义工具的“参数校验 -> 进度汇报 -> 结果回灌”数据闭环图。
 - **练习**：
   - *使用级*：实现一个 `/changelog` 自定义命令，打印指定分支的最近三条 commit。
@@ -361,7 +361,7 @@ Pi 被设计为一个 **最小化终端编码脚手架（Minimal Terminal Coding
   - UI 注入点：`setWidget()`、`setStatus()`、`setFooter()`、`confirm()` 覆盖。
   - 自定义主题 JSON 格式配置与 TUI Theme Hot Reload 刷新机制。
 - **不讲的问题**：在终端手写 console.log 破坏 TUI 渲染缓冲，导致界面闪烁、字符重叠或乱码。
-- **落点源码**：[packages/tui/src/tui.ts#L10](/source-code/packages/tui/src/tui.ts#L10)、[packages/tui/src/terminal.ts#L10](/source-code/packages/tui/src/terminal.ts#L10)、[packages/coding-agent/src/modes/interactive/theme/theme.ts#L10](/source-code/packages/coding-agent/src/modes/interactive/theme/theme.ts#L10)。
+- **落点源码**：[packages/tui/src/tui.ts#L10](packages/tui/src/tui.ts#L10)、[packages/tui/src/terminal.ts#L10](packages/tui/src/terminal.ts#L10)、[packages/coding-agent/src/modes/interactive/theme/theme.ts#L10](packages/coding-agent/src/modes/interactive/theme/theme.ts#L10)。
 - **图表与例程**：TUI 树形组件渲染管道与差量更新示意图。
 - **练习**：
   - *使用级*：定制一份自定义 `dark.json` 主题，修改 REPL 的 Message 背景色。
@@ -375,7 +375,7 @@ Pi 被设计为一个 **最小化终端编码脚手架（Minimal Terminal Coding
   - 分发渠道解析：支持 git 链接、npm 包名、本地绝对/相对路径（`-l` / `--local` 覆盖）。
   - 安全原则：三方扩展的权限限制；`--ignore-scripts` 全生命周期加固；npm shrinkwrap 解析。
 - **不讲的问题**：因为包路径解析不正确，导致团队成员在安装 package 后无法发现里面包含的 skills。
-- **落点源码**：[packages/coding-agent/src/core/package-manager.ts#L20](/source-code/packages/coding-agent/src/core/package-manager.ts#L20)、[packages/coding-agent/src/package-manager-cli.ts#L10](/source-code/packages/coding-agent/src/package-manager-cli.ts#L10)。
+- **落点源码**：[packages/coding-agent/src/core/package-manager.ts#L20](packages/coding-agent/src/core/package-manager.ts#L20)、[packages/coding-agent/src/package-manager-cli.ts#L10](packages/coding-agent/src/package-manager-cli.ts#L10)。
 - **图表与例程**：Pi Package 从安装到 ResourceLoader 自动发现资源的拓扑图。
 - **练习**：
   - *使用级*：在本地创建一个 pi-package 项目，添加一个 custom theme，并使用 `pi package install -l` 本地挂载。
@@ -395,7 +395,7 @@ Pi 被设计为一个 **最小化终端编码脚手架（Minimal Terminal Coding
   - 抽象输出事件规范化：`text`、`thinking`、`tool_call`、`done`、`error` 的跨云收束。
   - 模型上下文和成本字段估算器。
 - **不讲的问题**：误以为 Pi 直接调用了官方 SDK，导致在接入本地推理网关时无法准确处理流式 Usage metrics。
-- **落点源码**：[packages/ai/src/index.ts#L4](/source-code/packages/ai/src/index.ts#L4)、[packages/ai/src/types.ts#L10](/source-code/packages/ai/src/types.ts#L10)。
+- **落点源码**：[packages/ai/src/index.ts#L4](packages/ai/src/index.ts#L4)、[packages/ai/src/types.ts#L10](packages/ai/src/types.ts#L10)。
 - **图表与例程**：`pi-ai` 统一事件包装器对多 Provider 原始流的标准化转换图。
 - **练习**：
   - *使用级*：编写一段 ts 代码，导入 `@earendil-works/pi-ai` 并对某个模型进行流式提问。
@@ -409,7 +409,7 @@ Pi 被设计为一个 **最小化终端编码脚手架（Minimal Terminal Coding
   - 作用域覆写：Provider 级 baseUrl/headers 与 Model 级单独覆写。
   - 字段兼容性映射（`compat`）：`supportsDeveloperRole`、`supportsReasoningEffort`、`supportsUsageInStreaming`、`maxTokensField`。
 - **不讲的问题**：将本地模型接入后，因模型不支持 developer 角色或 `max_completion_tokens` 导致 API 报错 400。
-- **落点源码**：[packages/coding-agent/src/core/model-registry.ts#L350](/source-code/packages/coding-agent/src/core/model-registry.ts#L350)、[packages/ai/src/providers/register-builtins.ts#L10](/source-code/packages/ai/src/providers/register-builtins.ts#L10)。
+- **落点源码**：[packages/coding-agent/src/core/model-registry.ts#L350](packages/coding-agent/src/core/model-registry.ts#L350)、[packages/ai/src/providers/register-builtins.ts#L10](packages/ai/src/providers/register-builtins.ts#L10)。
 - **图表与例程**：内置模型元数据与 models.json 覆写后的运行时配置对比表。
 - **练习**：
   - *使用级*：在本地通过 Docker 运行 Ollama，并在 `models.json` 中配置它为 custom provider。
@@ -423,7 +423,7 @@ Pi 被设计为一个 **最小化终端编码脚手架（Minimal Terminal Coding
   - 自定义 `streamSimple()` 实现：如何从头包装一个私有 LLM 服务为 `AsyncGenerator`。
   - OAuth 鉴权生命周期：`getApiKey`、`refresh`、`login` 及其底层的设备代码流（Device Code Flow）。
 - **不讲的问题**：无法将企业内部 SSO OAuth 系统接入 Pi，阻碍企业级私有化落地。
-- **落点源码**：[packages/coding-agent/src/core/model-registry.ts#L790](/source-code/packages/coding-agent/src/core/model-registry.ts#L790)、[packages/ai/src/utils/oauth/index.ts#L10](/source-code/packages/ai/src/utils/oauth/index.ts#L10)。
+- **落点源码**：[packages/coding-agent/src/core/model-registry.ts#L790](packages/coding-agent/src/core/model-registry.ts#L790)、[packages/ai/src/utils/oauth/index.ts#L10](packages/ai/src/utils/oauth/index.ts#L10)。
 - **图表与例程**：SSO OAuth 设备流验证授权状态转换图。
 - **练习**：
   - *使用级*：通过 `/login github-copilot` 触发 OAuth 绑定。
@@ -437,7 +437,7 @@ Pi 被设计为一个 **最小化终端编码脚手架（Minimal Terminal Coding
   - Prompt Cache 命中的优化技巧：如何规划 `systemPrompt` 与 `history` Entry 的位置以强保 Cache Affinity。
   - Transport 链路优化：SSE（Server-Sent Events）与 WebSocket 协议在 API Client 侧的自动降级策略。
 - **不讲的问题**：频繁跨 Provider 切换模型时，由于没有处理好 reasoning block，导致后续模型将前一个模型的思考记录当成普通 text 吞下，引发幻觉。
-- **落点源码**：[packages/ai/src/providers/transform-messages.ts#L10](/source-code/packages/ai/src/providers/transform-messages.ts#L10)、[packages/ai/src/utils/overflow.ts#L10](/source-code/packages/ai/src/utils/overflow.ts#L10)。
+- **落点源码**：[packages/ai/src/providers/transform-messages.ts#L10](packages/ai/src/providers/transform-messages.ts#L10)、[packages/ai/src/utils/overflow.ts#L10](packages/ai/src/utils/overflow.ts#L10)。
 - **图表与例程**：Thinking block 跨 Provider 转换映射图。
 - **练习**：
   - *使用级*：开启 `--verbose`，观察请求响应时，Prompt Cache 的命中 Token 数和金额优惠。
@@ -456,7 +456,7 @@ Pi 被设计为一个 **最小化终端编码脚手架（Minimal Terminal Coding
   - 核心注入依赖：`AuthStorage`、`ModelRegistry`、`SessionManager` 的实例创建与挂载。
   - 内存会话（`inMemory()`）与持久化会话的区别与适用场景。
 - **不讲的问题**：不理解 SDK 接口，用子进程拉起 CLI 进行频繁 API 交互，性能极差且极易阻塞。
-- **落点源码**：[packages/coding-agent/src/core/sdk.ts#L100](/source-code/packages/coding-agent/src/core/sdk.ts#L100)。
+- **落点源码**：[packages/coding-agent/src/core/sdk.ts#L100](packages/coding-agent/src/core/sdk.ts#L100)。
 - **图表与例程**：SDK 编排自定义 Agent 的装配拓扑图。
 - **练习**：
   - *使用级*：运行 `packages/coding-agent/examples/` 下的 SDK 示例代码，输出一次 LLM 对话。
@@ -470,7 +470,7 @@ Pi 被设计为一个 **最小化终端编码脚手架（Minimal Terminal Coding
   - 切换与冷重生：`AgentSessionRuntime` 如何对 settings, resourceLoader 进行 shutdown 再 re-resolve。
   - 诊断信息（Diagnostics）收集与异常恢复。
 - **不讲的问题**：在多租户/多目录会话管理中，由于没有做 Service 解绑，导致 A 项目的规则被 A 租户误写到了 B 项目的 settings 中。
-- **落点源码**：[packages/coding-agent/src/core/agent-session-runtime.ts#L68](/source-code/packages/coding-agent/src/core/agent-session-runtime.ts#L68)、[packages/coding-agent/src/core/agent-session-services.ts#L100](/source-code/packages/coding-agent/src/core/agent-session-services.ts#L100)。
+- **落点源码**：[packages/coding-agent/src/core/agent-session-runtime.ts#L68](packages/coding-agent/src/core/agent-session-runtime.ts#L68)、[packages/coding-agent/src/core/agent-session-services.ts#L100](packages/coding-agent/src/core/agent-session-services.ts#L100)。
 - **图表与例程**：多会话宿主（Multi-Session Host）与多个 Cwd-bound Services 实例隔离图。
 - **练习**：
   - *使用级*：编写一个极简多会话切换脚本，轮流往 2 个不同 Cwd 的会话中写入不同 context 并取得分析。
@@ -484,7 +484,7 @@ Pi 被设计为一个 **最小化终端编码脚手架（Minimal Terminal Coding
   - 请求协议 Zod 结构：`Request`（method, params, id）与 `Response`（result, error, id）、`Event`（method, params）。
   - RPC 核心接口方法：`prompt`、`continue`、`abort`、`switch_session`、`register_tool`。
 - **不讲的问题**：不了解 RPC 的 stdin/stdout 混合分帧机制，导致跨进程通信时数据粘包或解析死锁。
-- **落点源码**：[packages/coding-agent/src/modes/rpc/rpc-mode.ts#L10](/source-code/packages/coding-agent/src/modes/rpc/rpc-mode.ts#L10)、[packages/coding-agent/src/modes/rpc/rpc-client.ts#L10](/source-code/packages/coding-agent/src/modes/rpc/rpc-client.ts#L10)。
+- **落点源码**：[packages/coding-agent/src/modes/rpc/rpc-mode.ts#L10](packages/coding-agent/src/modes/rpc/rpc-mode.ts#L10)、[packages/coding-agent/src/modes/rpc/rpc-client.ts#L10](packages/coding-agent/src/modes/rpc/rpc-client.ts#L10)。
 - **图表与例程**：外部 IDE 进程与 Pi RPC mode 进行会话交互的时序图。
 - **练习**：
   - *使用级*：以 `pi --mode rpc` 启动 Pi，手动输入一条 json-rpc 初始协议并查看输出。
@@ -498,7 +498,7 @@ Pi 被设计为一个 **最小化终端编码脚手架（Minimal Terminal Coding
   - 事件类型分发：`request_start`、`stream_event`（text, thinking, tool_call）、`message_added`、`diagnostics`。
   - Stdout 与 Stderr 洁净度：如何完全隔离调试日志，保证管道输出只有合法的 JSON。
 - **不讲的问题**：CI 脚本解析 json 失败，原因是 bash 管道输出了非 JSON 的 ANSI 字符或警告信息污染。
-- **落点源码**：[packages/coding-agent/src/modes/print-mode.ts#L50](/source-code/packages/coding-agent/src/modes/print-mode.ts#L50)、[packages/coding-agent/src/core/output-guard.ts#L10](/source-code/packages/coding-agent/src/core/output-guard.ts#L10)。
+- **落点源码**：[packages/coding-agent/src/modes/print-mode.ts#L50](packages/coding-agent/src/modes/print-mode.ts#L50)、[packages/coding-agent/src/core/output-guard.ts#L10](packages/coding-agent/src/core/output-guard.ts#L10)。
 - **图表与例程**：JSON 事件流在自动化流水线中的路由与过滤逻辑图。
 - **练习**：
   - *使用级*：运行 `pi --mode json -p "say test"`，解析控制台输出的 json array。
@@ -518,7 +518,7 @@ Pi 被设计为一个 **最小化终端编码脚手架（Minimal Terminal Coding
   - 供应链安全：三方 packages 及扩展的 preinstall lifecycle 拦截。
   - 为什么不内置权限确认弹窗：设计权衡——将最终安全屏障移交至沙箱（Docker / VM / gVisor）或 tmux。
 - **不讲的问题**：运行了不受信任的开源 package，导致本地密钥或敏感代码被恶意 bash 工具悄悄上传。
-- **落点源码**：[packages/coding-agent/src/core/auth-storage.ts#L112](/source-code/packages/coding-agent/src/core/auth-storage.ts#L112)、[packages/coding-agent/src/core/tools/bash.ts#L300](/source-code/packages/coding-agent/src/core/tools/bash.ts#L300)。
+- **落点源码**：[packages/coding-agent/src/core/auth-storage.ts#L112](packages/coding-agent/src/core/auth-storage.ts#L112)、[packages/coding-agent/src/core/tools/bash.ts#L300](packages/coding-agent/src/core/tools/bash.ts#L300)。
 - **图表与例程**：恶性 Prompt 注入通过 Tool Execution 逃逸并在沙箱边界被拦截的网络流图。
 - **练习**：
   - *使用级*：通过 `--no-tools` 限制 Pi 仅用于只读问答，无法执行任何本地修改。
@@ -533,7 +533,7 @@ Pi 被设计为一个 **最小化终端编码脚手架（Minimal Terminal Coding
   - settings 诊断错误栈的排查（`drainErrors()`）。
   - Provider 网络拦截与重试逻辑。
 - **不讲的问题**：遇到报错只会重启 CLI 或清空配置，无法向平台反馈精确的故障 Entry 细节。
-- **落点源码**：[packages/coding-agent/src/config.ts#L521](/source-code/packages/coding-agent/src/config.ts#L521)、[packages/coding-agent/src/core/diagnostics.ts#L10](/source-code/packages/coding-agent/src/core/diagnostics.ts#L10)。
+- **落点源码**：[packages/coding-agent/src/config.ts#L521](packages/coding-agent/src/config.ts#L521)、[packages/coding-agent/src/core/diagnostics.ts#L10](packages/coding-agent/src/core/diagnostics.ts#L10)。
 - **图表与例程**：Pi 跨层错误诊断与排查树。
 - **练习**：
   - *使用级*：在启动时附加调试日志输出，定位一次因 Extension 重名导致的加载冲突。
@@ -547,7 +547,7 @@ Pi 被设计为一个 **最小化终端编码脚手架（Minimal Terminal Coding
   - Tmux 视口控制：测试 interactive 模式的专属 tmux 状态快照与按键序列伪造。
   - 剪贴板管理：基于 native npm binding 的 Clipboard image (PNG/BMP) 提取与 resize 压缩。
 - **不讲的问题**：在 Windows 上无法运行 bash 工具，或者在 tmux 容器下快捷键 Alt+Enter 完全失效。
-- **落点源码**：[packages/tui/src/keybindings.ts#L10](/source-code/packages/tui/src/keybindings.ts#L10)、[packages/coding-agent/src/utils/clipboard-image.ts#L50](/source-code/packages/coding-agent/src/utils/clipboard-image.ts#L50)。
+- **落点源码**：[packages/tui/src/keybindings.ts#L10](packages/tui/src/keybindings.ts#L10)、[packages/coding-agent/src/utils/clipboard-image.ts#L50](packages/coding-agent/src/utils/clipboard-image.ts#L50)。
 - **图表与例程**：IME 输入与 TUI 编辑器视图同步的字符重算过程图。
 - **练习**：
   - *使用级*：在 tmux session 中测试运行 `pi-test.sh` 脚本，观察交互界面冷启动。
@@ -580,7 +580,7 @@ Pi 被设计为一个 **最小化终端编码脚手架（Minimal Terminal Coding
   - 依赖：使用 `@earendil-works/pi-ai` 调用 Anthropic 接口。
   - 工具定义：基于 TypeBox 编写一个文件读写 tool schema。
   - 循环逻辑：处理 `tool_use`、调用工具、生成 `tool_result` 会话 Entry，并将结果重新 Feed 给模型，形成闭环。
-- **落点源码**：[packages/coding-agent/src/core/sdk.ts#L200](/source-code/packages/coding-agent/src/core/sdk.ts#L200) 设计。
+- **落点源码**：[packages/coding-agent/src/core/sdk.ts#L200](packages/coding-agent/src/core/sdk.ts#L200) 设计。
 - **成果交付**：一个小于 150 行的单文件 Agent 执行器，支持流式渲染和自动工具循环。
 
 #### 第 37 章：开发团队专属的工作流扩展包 (Pi Package)
@@ -589,7 +589,7 @@ Pi 被设计为一个 **最小化终端编码脚手架（Minimal Terminal Coding
   - 封装一个包含特定业务逻辑的 custom tool（如查询团队 API 状态）。
   - 封装一个 markdown skill（如如何按照团队规范编写 CSS）。
   - 封装一个 prompt template 并绑定成命令。
-- **落点源码**：[packages/coding-agent/src/core/package-manager.ts#L200](/source-code/packages/coding-agent/src/core/package-manager.ts#L200) 装载。
+- **落点源码**：[packages/coding-agent/src/core/package-manager.ts#L200](packages/coding-agent/src/core/package-manager.ts#L200) 装载。
 - **成果交付**：一个可发布至 private npm registry 或 git 仓的 `.tgz` 扩展包，团队一键 `pi package install` 即可就地升级开发流程。
 
 #### 第 38 章：企业私有 AI 接入（自定义 Provider 扩展）
@@ -597,7 +597,7 @@ Pi 被设计为一个 **最小化终端编码脚手架（Minimal Terminal Coding
 - **必须讲**：
   - 实现基于特殊加密算法的请求签名机制。
   - 在 Extension 中实现 OAuth 设备码流并与 `AuthStorage` 结合持久化凭证。
-- **落点源码**：[packages/coding-agent/src/core/model-registry.ts#L790](/source-code/packages/coding-agent/src/core/model-registry.ts#L790)。
+- **落点源码**：[packages/coding-agent/src/core/model-registry.ts#L790](packages/coding-agent/src/core/model-registry.ts#L790)。
 - **成果交付**：一个 Provider 扩展，可供团队成员通过 `/login company-sso` 登录内部大模型网关，并支持 Prompt Cache 的动态配置。
 
 #### 第 39 章：构建终端交互控制台 (Custom TUI Widget)
@@ -605,7 +605,7 @@ Pi 被设计为一个 **最小化终端编码脚手架（Minimal Terminal Coding
 - **必须讲**：
   - 使用 `@earendil-works/pi-tui` 的组件基类，编写自定义 SelectList 和带有框线的加载动画器（BorderedLoader）。
   - 通过 extension hooks 拦截 `/jira` 命令，弹出自定义 UI，引导用户在终端可视化选择待开发的需求卡片。
-- **落点源码**：[packages/tui/src/tui.ts#L100](/source-code/packages/tui/src/tui.ts#L100)。
+- **落点源码**：[packages/tui/src/tui.ts#L100](packages/tui/src/tui.ts#L100)。
 - **成果交付**：一个炫酷的、可以在 TUI 中渲染的交互式卡片选择器，支持完全的键盘导航、回车确认、Esc 取消。
 
 ---

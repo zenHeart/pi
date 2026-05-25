@@ -32,13 +32,13 @@ pi --mode rpc --no-session
 
 ## 29.3 核心机制
 
-协议类型定义在 [rpc-types.ts#L16](/source-code/packages/coding-agent/src/modes/rpc/rpc-types.ts#L16)。`RpcCommand` 覆盖 prompting、state、model、thinking、queue modes、compaction、retry、bash、session、messages、commands。`RpcResponse` 为每个 command 定义成功响应形状，也允许任意 command 返回 `success: false` 和 `error`。
+协议类型定义在 [rpc-types.ts#L16](packages/coding-agent/src/modes/rpc/rpc-types.ts#L16)。`RpcCommand` 覆盖 prompting、state、model、thinking、queue modes、compaction、retry、bash、session、messages、commands。`RpcResponse` 为每个 command 定义成功响应形状，也允许任意 command 返回 `success: false` 和 `error`。
 
-运行入口在 [rpc-mode.ts#L53](/source-code/packages/coding-agent/src/modes/rpc/rpc-mode.ts#L53)。`runRpcMode(runtimeHost)` 接收 `AgentSessionRuntime`，接管 stdout，绑定当前 session 的扩展 UI context，订阅 session events 并把事件序列化到 stdout。命令处理器把 `prompt` 映射到 `session.prompt()`，把 `new_session`、`switch_session`、`fork`、`clone` 映射到 runtime replacement，把 `get_available_models` 映射到 `session.modelRegistry.getAvailable()`。
+运行入口在 [rpc-mode.ts#L53](packages/coding-agent/src/modes/rpc/rpc-mode.ts#L53)。`runRpcMode(runtimeHost)` 接收 `AgentSessionRuntime`，接管 stdout，绑定当前 session 的扩展 UI context，订阅 session events 并把事件序列化到 stdout。命令处理器把 `prompt` 映射到 `session.prompt()`，把 `new_session`、`switch_session`、`fork`、`clone` 映射到 runtime replacement，把 `get_available_models` 映射到 `session.modelRegistry.getAvailable()`。
 
-JSONL framing 是协议的一部分，不是实现细节。`rpc.md` 要求只用 LF (`\n`) 分隔记录，客户端可接受 CRLF 但要去掉尾部 `\r`，不要用会把 Unicode separators 当换行的通用 line reader。源码里的 `attachJsonlLineReader()` 也刻意不用 Node `readline`：[jsonl.ts#L9](/source-code/packages/coding-agent/src/modes/rpc/jsonl.ts#L9)。
+JSONL framing 是协议的一部分，不是实现细节。`rpc.md` 要求只用 LF (`\n`) 分隔记录，客户端可接受 CRLF 但要去掉尾部 `\r`，不要用会把 Unicode separators 当换行的通用 line reader。源码里的 `attachJsonlLineReader()` 也刻意不用 Node `readline`：[jsonl.ts#L9](packages/coding-agent/src/modes/rpc/jsonl.ts#L9)。
 
-RPC 复用的是同一套 session event。事件类型来自 [agent-session.ts#L252](/source-code/packages/coding-agent/src/core/agent-session.ts#L252)，所以外部进程看到的 `message_update.assistantMessageEvent.type` 与 SDK 中一致：`text_delta`、`thinking_delta`、`toolcall_delta`、`done`、`error` 等。
+RPC 复用的是同一套 session event。事件类型来自 [agent-session.ts#L252](packages/coding-agent/src/core/agent-session.ts#L252)，所以外部进程看到的 `message_update.assistantMessageEvent.type` 与 SDK 中一致：`text_delta`、`thinking_delta`、`toolcall_delta`、`done`、`error` 等。
 
 
 **生命周期图**
@@ -55,10 +55,10 @@ flowchart LR
 
 | 环节 | 系统责任 | 源码证据 | 读源码时要确认什么 |
 |---|---|---|---|
-| SDK | 同进程消费 AgentSession | [agent-session-runtime.ts#L68](/source-code/packages/coding-agent/src/core/agent-session-runtime.ts#L68) | 输入从哪里来，输出交给谁，失败由哪一层裁决 |
-| RPC | JSONL stdin/stdout 跨进程协议 | [rpc-mode.ts#L53](/source-code/packages/coding-agent/src/modes/rpc/rpc-mode.ts#L53) | 输入从哪里来，输出交给谁，失败由哪一层裁决 |
-| JSON 模式 | 结构化事件流输出 | [print-mode.ts#L104](/source-code/packages/coding-agent/src/modes/print-mode.ts#L104) | 输入从哪里来，输出交给谁，失败由哪一层裁决 |
-| 运行时服务 | 统一装配 settings/provider/resource/session | [agent-session-runtime.ts#L393](/source-code/packages/coding-agent/src/core/agent-session-runtime.ts#L393) | 输入从哪里来，输出交给谁，失败由哪一层裁决 |
+| SDK | 同进程消费 AgentSession | [agent-session-runtime.ts#L68](packages/coding-agent/src/core/agent-session-runtime.ts#L68) | 输入从哪里来，输出交给谁，失败由哪一层裁决 |
+| RPC | JSONL stdin/stdout 跨进程协议 | [rpc-mode.ts#L53](packages/coding-agent/src/modes/rpc/rpc-mode.ts#L53) | 输入从哪里来，输出交给谁，失败由哪一层裁决 |
+| JSON 模式 | 结构化事件流输出 | [print-mode.ts#L104](packages/coding-agent/src/modes/print-mode.ts#L104) | 输入从哪里来，输出交给谁，失败由哪一层裁决 |
+| 运行时服务 | 统一装配 settings/provider/resource/session | [agent-session-runtime.ts#L393](packages/coding-agent/src/core/agent-session-runtime.ts#L393) | 输入从哪里来，输出交给谁，失败由哪一层裁决 |
 
 **关键代码说明**
 

@@ -28,21 +28,21 @@ Pi Agent 的分支机制（通过 `/tree`、`/fork`、`/clone` 和 `/resume` 等
 
 #### 12.3.1 会话加载与继续（Resume）
 
-继续最近会话的入口为 [SessionManager.continueRecent](/source-code/packages/coding-agent/src/core/session-manager.ts#L1338)。它会扫描指定的工作目录（通常由 `~/.pi/agent/sessions/--<path>--/` 约定），读取修改时间最新的 `.jsonl` 文件。如果没有找到历史会话，它将自动调用 [SessionManager.newSession](/source-code/packages/coding-agent/src/core/session-manager.ts#L772) 创建一个带有全新 UUID 的会话。
+继续最近会话的入口为 [SessionManager.continueRecent](packages/coding-agent/src/core/session-manager.ts#L1338)。它会扫描指定的工作目录（通常由 `~/.pi/agent/sessions/--<path>--/` 约定），读取修改时间最新的 `.jsonl` 文件。如果没有找到历史会话，它将自动调用 [SessionManager.newSession](packages/coding-agent/src/core/session-manager.ts#L772) 创建一个带有全新 UUID 的会话。
 
 #### 12.3.2 分支分叉（Fork）与克隆（Clone）
 
-Fork 的静态核心方法位于 [SessionManager.forkFrom](/source-code/packages/coding-agent/src/core/session-manager.ts#L1359)。它接受源会话文件路径，创建新的 Session 实例，将旧会话文件路径作为 `parentSession` 写入新会话的 `SessionHeader`。
+Fork 的静态核心方法位于 [SessionManager.forkFrom](packages/coding-agent/src/core/session-manager.ts#L1359)。它接受源会话文件路径，创建新的 Session 实例，将旧会话文件路径作为 `parentSession` 写入新会话的 `SessionHeader`。
 
-当用户克隆当前活动分支时，底层的 [SessionManager.createBranchedSession](/source-code/packages/coding-agent/src/core/session-manager.ts#L1212) 将过滤掉无关的分支，仅沿着从 `leafId` 回溯至根节点（Root）的路径，将该链条上的所有 entries 写入新的 JSONL 文件，从而保持会话上下文的精简与纯净。
+当用户克隆当前活动分支时，底层的 [SessionManager.createBranchedSession](packages/coding-agent/src/core/session-manager.ts#L1212) 将过滤掉无关的分支，仅沿着从 `leafId` 回溯至根节点（Root）的路径，将该链条上的所有 entries 写入新的 JSONL 文件，从而保持会话上下文的精简与纯净。
 
 #### 12.3.3 树节点切换与摘要（Tree Navigation）
 
-在同一个会话文件内切换节点的动作由 [AgentSession.navigateTree](/source-code/packages/coding-agent/src/core/agent-session.ts#L2657) 实现。其具体执行流程如下：
+在同一个会话文件内切换节点的动作由 [AgentSession.navigateTree](packages/coding-agent/src/core/agent-session.ts#L2657) 实现。其具体执行流程如下：
 
-1. **计算共同祖先**：通过 [collectEntriesForBranchSummary](/source-code/packages/coding-agent/src/core/compaction/branch-summarization.ts#L98) 算法找到当前活动叶子节点 `oldLeafId` 与目标节点 `targetId` 的共同祖先，从而确定被抛弃的分支段（Branch Segment）。
+1. **计算共同祖先**：通过 [collectEntriesForBranchSummary](packages/coding-agent/src/core/compaction/branch-summarization.ts#L98) 算法找到当前活动叶子节点 `oldLeafId` 与目标节点 `targetId` 的共同祖先，从而确定被抛弃的分支段（Branch Segment）。
 2. **发射拦截事件**：发射 `session_before_tree` 事件，允许扩展程序拦截或提供自定义的分支摘要。
-3. **生成分支摘要（Branch Summary）**：如果开启了分支摘要且被抛弃分支不为空，系统会调用语言模型生成这段历史的摘要，并由 [SessionManager.branchWithSummary](/source-code/packages/coding-agent/src/core/session-manager.ts#L1188) 写入一条 `branch_summary` 类型的记录。
+3. **生成分支摘要（Branch Summary）**：如果开启了分支摘要且被抛弃分支不为空，系统会调用语言模型生成这段历史的摘要，并由 [SessionManager.branchWithSummary](packages/coding-agent/src/core/session-manager.ts#L1188) 写入一条 `branch_summary` 类型的记录。
 4. **重定位叶子节点**：
    - 若目标节点是用户消息（`user`），则将 `leafId` 移动到该用户消息的 `parentId`，并把该用户消息的文本填入 TUI 编辑器中，以便用户修改后重新提交。
    - 若目标是系统或助手消息，则直接将 `leafId` 移动至该节点。
@@ -78,11 +78,11 @@ sequenceDiagram
 
 | 环节 | 系统责任 | 源码证据 | 关键确认点 |
 |---|---|---|---|
-| 自动恢复最近会话 | 匹配当前项目 CWD 对应的最新 JSONL 会话记录并加载 | [session-manager.ts#L1338](/source-code/packages/coding-agent/src/core/session-manager.ts#L1338) | 检查是否正确处理了文件缺失及 CWD 校验 |
-| 分叉新会话文件 | 读取源会话条目，重写 SessionHeader 并在目标目录落地新文件 | [session-manager.ts#L1359](/source-code/packages/coding-agent/src/core/session-manager.ts#L1359) | 确认 parentSession 指针是否正确写入头部 |
-| 分支线性截取 | 提取指定 leaf 到 root 的完整链，剔除其他无关分叉并写入新文件 | [session-manager.ts#L1212](/source-code/packages/coding-agent/src/core/session-manager.ts#L1212) | 确认是否正确过滤和重构了 LabelEntry |
-| 树导航调度 | 控制节点跳转流程、触发钩子、装填编辑器并重新计算状态上下文 | [agent-session.ts#L2657](/source-code/packages/coding-agent/src/core/agent-session.ts#L2657) | 确认在发生错误或取消时，状态能否安全回滚 |
-| 运行态会话替换 | 处理会话切换、新会话创建、Fork 时底层的生命周期解绑与重新绑定 | [agent-session-runtime.ts#L187](/source-code/packages/coding-agent/src/core/agent-session-runtime.ts#L187) | 确认切换时旧 session 是否调用 dispose 释放资源 |
+| 自动恢复最近会话 | 匹配当前项目 CWD 对应的最新 JSONL 会话记录并加载 | [session-manager.ts#L1338](packages/coding-agent/src/core/session-manager.ts#L1338) | 检查是否正确处理了文件缺失及 CWD 校验 |
+| 分叉新会话文件 | 读取源会话条目，重写 SessionHeader 并在目标目录落地新文件 | [session-manager.ts#L1359](packages/coding-agent/src/core/session-manager.ts#L1359) | 确认 parentSession 指针是否正确写入头部 |
+| 分支线性截取 | 提取指定 leaf 到 root 的完整链，剔除其他无关分叉并写入新文件 | [session-manager.ts#L1212](packages/coding-agent/src/core/session-manager.ts#L1212) | 确认是否正确过滤和重构了 LabelEntry |
+| 树导航调度 | 控制节点跳转流程、触发钩子、装填编辑器并重新计算状态上下文 | [agent-session.ts#L2657](packages/coding-agent/src/core/agent-session.ts#L2657) | 确认在发生错误或取消时，状态能否安全回滚 |
+| 运行态会话替换 | 处理会话切换、新会话创建、Fork 时底层的生命周期解绑与重新绑定 | [agent-session-runtime.ts#L187](packages/coding-agent/src/core/agent-session-runtime.ts#L187) | 确认切换时旧 session 是否调用 dispose 释放资源 |
 
 ## 12.4 为什么这样设计
 
@@ -108,7 +108,7 @@ sequenceDiagram
 
 #### 12.5.3 故障排查：跳转回空 CWD 会话导致运行时报错
 
-若通过 `/import` 载入了一个在其他机器或不同工作目录下生成的 JSONL 会话，如果该会话头部的 `cwd` 目录在当前机器上不存在，运行时会抛出 `MissingSessionCwdError`。此时 [AgentSessionRuntime.importFromJsonl](/source-code/packages/coding-agent/src/core/agent-session-runtime.ts#L340) 会捕获此错误并要求 TUI 引导用户重新指定可用的工作目录，之后才能安全完成会话重建。
+若通过 `/import` 载入了一个在其他机器或不同工作目录下生成的 JSONL 会话，如果该会话头部的 `cwd` 目录在当前机器上不存在，运行时会抛出 `MissingSessionCwdError`。此时 [AgentSessionRuntime.importFromJsonl](packages/coding-agent/src/core/agent-session-runtime.ts#L340) 会捕获此错误并要求 TUI 引导用户重新指定可用的工作目录，之后才能安全完成会话重建。
 
 ## 12.6 本章训练
 
@@ -118,7 +118,7 @@ sequenceDiagram
 
 #### 12.6.2 原理练习：追踪共同祖先算法
 
-阅读 [collectEntriesForBranchSummary](/source-code/packages/coding-agent/src/core/compaction/branch-summarization.ts#L98) 的源码。手动模拟当 `oldLeafId` 位于 `A -> B -> C -> D` 分支，而目标 `targetId` 位于 `A -> B -> E -> F` 分支时，该算法返回的共同祖先节点是谁，哪些 entries 会被归入废弃汇总列表（`entriesToSummarize`）。
+阅读 [collectEntriesForBranchSummary](packages/coding-agent/src/core/compaction/branch-summarization.ts#L98) 的源码。手动模拟当 `oldLeafId` 位于 `A -> B -> C -> D` 分支，而目标 `targetId` 位于 `A -> B -> E -> F` 分支时，该算法返回的共同祖先节点是谁，哪些 entries 会被归入废弃汇总列表（`entriesToSummarize`）。
 
 #### 12.6.3 扩展练习：分支前钩子扩展
 

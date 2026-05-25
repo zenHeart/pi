@@ -60,20 +60,20 @@ graph TD
 会话格式编解码和管理的源码位于 `packages/agent` 两个核心模块中。
 
 1. **JSONL 的存储层适配器**：
-   - `JsonlSessionStorage`（[jsonl-storage.ts#L161](/source-code/packages/agent/src/harness/session/jsonl-storage.ts#L161)）直接承载了文件底层的流式加载与增量写入。
-   - 在首次 `open` 某个会话时，`loadJsonlStorage`（[jsonl-storage.ts#L136](/source-code/packages/agent/src/harness/session/jsonl-storage.ts#L136)）会完整读取文件内容，按行拆分，并在 `parseHeaderLine`（[jsonl-storage.ts#L59](/source-code/packages/agent/src/harness/session/jsonl-storage.ts#L59)）和 `parseEntryLine`（[jsonl-storage.ts#L87](/source-code/packages/agent/src/harness/session/jsonl-storage.ts#L87)）中进行强类型验证。
-   - 文件物理头部的定义满足 `SessionHeader` 结构（[jsonl-storage.ts#L8](/source-code/packages/agent/src/harness/session/jsonl-storage.ts#L8)），且只支持版本 `version: 3`（[jsonl-storage.ts#L68](/source-code/packages/agent/src/harness/session/jsonl-storage.ts#L68)），任何格式不正确的行都会抛出 `SessionError`。
+   - `JsonlSessionStorage`（[jsonl-storage.ts#L161](packages/agent/src/harness/session/jsonl-storage.ts#L161)）直接承载了文件底层的流式加载与增量写入。
+   - 在首次 `open` 某个会话时，`loadJsonlStorage`（[jsonl-storage.ts#L136](packages/agent/src/harness/session/jsonl-storage.ts#L136)）会完整读取文件内容，按行拆分，并在 `parseHeaderLine`（[jsonl-storage.ts#L59](packages/agent/src/harness/session/jsonl-storage.ts#L59)）和 `parseEntryLine`（[jsonl-storage.ts#L87](packages/agent/src/harness/session/jsonl-storage.ts#L87)）中进行强类型验证。
+   - 文件物理头部的定义满足 `SessionHeader` 结构（[jsonl-storage.ts#L8](packages/agent/src/harness/session/jsonl-storage.ts#L8)），且只支持版本 `version: 3`（[jsonl-storage.ts#L68](packages/agent/src/harness/session/jsonl-storage.ts#L68)），任何格式不正确的行都会抛出 `SessionError`。
 
 2. **树状回溯路径追溯**：
    - 因为文件是追加写（Append-only）的，分支可能纵横交错。在启动大模型对话前，系统必须找出当前活跃叶子节点到根节点的一条“线性 transcript 链”。
-   - 该解析在 `getPathToRoot`（[jsonl-storage.ts#L275](/source-code/packages/agent/src/harness/session/jsonl-storage.ts#L275)）中实现：它从当前 `leafId` 开始，利用 `parentId` 进行链表回溯，将所有涉及的树节点压入 `path` 数组并最终逆序返回。这保证了**即便文件中混杂了其他废弃分支的数据，编译出的上下文也绝对干净**。
+   - 该解析在 `getPathToRoot`（[jsonl-storage.ts#L275](packages/agent/src/harness/session/jsonl-storage.ts#L275)）中实现：它从当前 `leafId` 开始，利用 `parentId` 进行链表回溯，将所有涉及的树节点压入 `path` 数组并最终逆序返回。这保证了**即便文件中混杂了其他废弃分支的数据，编译出的上下文也绝对干净**。
 
 3. **运行时会话上下文重构**：
-   - `packages/agent` 的 `Session` 类（[session.ts#L78](/source-code/packages/agent/src/harness/session/session.ts#L78)）在运行时封装了 `buildContext`（[session.ts#L110](/source-code/packages/agent/src/harness/session/session.ts#L110)）。它会调用底层的 `buildSessionContext`（[session.ts#L21](/source-code/packages/agent/src/harness/session/session.ts#L21)）。
-   - 在重塑上下文时，它不仅会抽取消息主体，还会扫描路径节点中的特定事件（例如 `thinking_level_change`（[session.ts#L27](/source-code/packages/agent/src/harness/session/session.ts#L27)）和 `model_change`（[session.ts#L29](/source-code/packages/agent/src/harness/session/session.ts#L29)）），从而得出当时环境的配置状态。同时在遇到 `compaction`（[session.ts#L33](/source-code/packages/agent/src/harness/session/session.ts#L33)）历史截断标记时，自动完成历史记录截断与摘要消息拼接（[session.ts#L57](/source-code/packages/agent/src/harness/session/session.ts#L57)）。
+   - `packages/agent` 的 `Session` 类（[session.ts#L78](packages/agent/src/harness/session/session.ts#L78)）在运行时封装了 `buildContext`（[session.ts#L110](packages/agent/src/harness/session/session.ts#L110)）。它会调用底层的 `buildSessionContext`（[session.ts#L21](packages/agent/src/harness/session/session.ts#L21)）。
+   - 在重塑上下文时，它不仅会抽取消息主体，还会扫描路径节点中的特定事件（例如 `thinking_level_change`（[session.ts#L27](packages/agent/src/harness/session/session.ts#L27)）和 `model_change`（[session.ts#L29](packages/agent/src/harness/session/session.ts#L29)）），从而得出当时环境的配置状态。同时在遇到 `compaction`（[session.ts#L33](packages/agent/src/harness/session/session.ts#L33)）历史截断标记时，自动完成历史记录截断与摘要消息拼接（[session.ts#L57](packages/agent/src/harness/session/session.ts#L57)）。
 
 4. **节点联合类型规范**：
-   - 底层定义的所有 Entry 节点必须符合 `SessionTreeEntry` 联合类型（[types.ts#L404](/source-code/packages/agent/src/harness/types.ts#L404)）。
+   - 底层定义的所有 Entry 节点必须符合 `SessionTreeEntry` 联合类型（[types.ts#L404](packages/agent/src/harness/types.ts#L404)）。
    - 它的子类型包括 `MessageEntry`、`ThinkingLevelChangeEntry`、`ModelChangeEntry`、`CompactionEntry`、`BranchSummaryEntry`、`CustomEntry`、`LabelEntry`、`LeafEntry` 等，用以完整记录 Agent 交互链路中的各种状态变迁。
 
 ## 11.4 设计考量与折中方案
@@ -84,19 +84,19 @@ graph TD
 
 #### 11.4.2 逻辑 Leaf 指针与线性分支的切换（MoveTo）
 - 在 JSONL 中，改变会话指针（如进行 Fork 切换）并不会删除或修改已有的节点。
-- 当执行 `moveTo(entryId)`（[session.ts#L232](/source-code/packages/agent/src/harness/session/session.ts#L232)）时，Pi 仅仅是追加了一条类型为 `leaf` 且 `targetId` 指向目标节点的 Entry。通过这种设计，**所有的分支迁移历史本身也成为了被审计的历史轨迹**。
+- 当执行 `moveTo(entryId)`（[session.ts#L232](packages/agent/src/harness/session/session.ts#L232)）时，Pi 仅仅是追加了一条类型为 `leaf` 且 `targetId` 指向目标节点的 Entry。通过这种设计，**所有的分支迁移历史本身也成为了被审计的历史轨迹**。
 
 ## 11.5 常见误解与排错指南
 
 #### 11.5.1 误区：手动在文本编辑器中删减了 JSONL 的中间行，导致分支回溯错乱
 - **现象**：手动删除了一条 `parentId` 处于链路中间的消息，再打开 Pi 终端，发现会话历史全部丢失或报 `Entry not found` 错误。
-- **原因**：由于 `getPathToRoot` 是严格依赖 parent 关联链回溯的（[jsonl-storage.ts#L280](/source-code/packages/agent/src/harness/session/jsonl-storage.ts#L280)），如果打断了指针关联，回溯链将无法连通至根部，导致抛出 `SessionError`。
+- **原因**：由于 `getPathToRoot` 是严格依赖 parent 关联链回溯的（[jsonl-storage.ts#L280](packages/agent/src/harness/session/jsonl-storage.ts#L280)），如果打断了指针关联，回溯链将无法连通至根部，导致抛出 `SessionError`。
 - **排查**：不要手动修改 JSONL 文件的结构。如果需要回滚，可以通过 `/tree` 命令行工具在 TUI 界面中选择历史节点切换，系统会自动安全地追加 `leaf` 节点来实现分支跳转。
 
 #### 11.5.2 误区：认为会话文件包含了所有 Tool Call 执行时的物理磁盘文件快照
 - **现象**：切换到了另一个分支（Branch），但是刚才用 `edit` 写入的文件代码并没有被还原。
 - **原因**：JSONL 会话文件只记录“交互的历史转录（Transcript）和决策树状态”，它并不充当 Git 等物理版本控制系统的角色。
-- **排查**：要实现工作区代码的物理还原，需要通过注册 Hook 监听 `session_tree`（[types.ts#L588](/source-code/packages/agent/src/harness/types.ts#L588)）事件，在分支切换时利用 Git 工具自动进行工作区代码的分支回滚。
+- **排查**：要实现工作区代码的物理还原，需要通过注册 Hook 监听 `session_tree`（[types.ts#L588](packages/agent/src/harness/types.ts#L588)）事件，在分支切换时利用 Git 工具自动进行工作区代码的分支回滚。
 
 ## 11.6 课后练习
 
@@ -105,8 +105,8 @@ graph TD
 
 #### 11.6.2 原理级练习
 深入阅读 `packages/agent/src/harness/session/jsonl-storage.ts` 的加载逻辑：
-1. 请问在 [jsonl-storage.ts#L17](/source-code/packages/agent/src/harness/session/jsonl-storage.ts#L17) 的 `updateLabelCache` 中，它是如何建立和清空节点标签（Label）缓存映射的？标签对分支树导航有何帮助？
-2. 在 [jsonl-storage.ts#L35](/source-code/packages/agent/src/harness/session/jsonl-storage.ts#L35) 的 `generateEntryId` 中，为什么它会在重复 100 次以内的随机截断 UUID 中寻找非重复 ID？如果 100 次碰撞失败，兜底策略是什么？
+1. 请问在 [jsonl-storage.ts#L17](packages/agent/src/harness/session/jsonl-storage.ts#L17) 的 `updateLabelCache` 中，它是如何建立和清空节点标签（Label）缓存映射的？标签对分支树导航有何帮助？
+2. 在 [jsonl-storage.ts#L35](packages/agent/src/harness/session/jsonl-storage.ts#L35) 的 `generateEntryId` 中，为什么它会在重复 100 次以内的随机截断 UUID 中寻找非重复 ID？如果 100 次碰撞失败，兜底策略是什么？
 
 #### 11.6.3 扩展级练习
 为 `JsonlSessionStorage` 实现一个“会话整理与垃圾回收（Garbage Collection）”的方法：`optimizeSessionFile()`。

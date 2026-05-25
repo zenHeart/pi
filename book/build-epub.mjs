@@ -72,7 +72,7 @@ async function buildEpub(outputPath = EPUB_OUTPUT) {
 // 安装依赖提示
 function showInstallHelp() {
   console.log(`
-Pi Agent 实战 - EPUB 构建工具
+Pi Agent 专家之书 - EPUB 构建工具
 ==================================
 
 要构建 EPUB 文件，需要先安装依赖：

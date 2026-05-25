@@ -37,13 +37,13 @@ const runtime = await createAgentSessionRuntime(createRuntime, {
 
 ## 28.3 核心机制
 
-`AgentSessionServices` 定义在 [agent-session-services.ts#L130](/source-code/packages/coding-agent/src/core/agent-session-services.ts#L130)。它包含 `cwd`、`agentDir`、`authStorage`、`settingsManager`、`modelRegistry`、`resourceLoader` 和 `diagnostics`。这些都是“绑定到有效 cwd 的运行依赖”：项目本地扩展、skills、prompts、AGENTS.md、settings、models.json 都可能随 cwd 变化而不同。
+`AgentSessionServices` 定义在 [agent-session-services.ts#L130](packages/coding-agent/src/core/agent-session-services.ts#L130)。它包含 `cwd`、`agentDir`、`authStorage`、`settingsManager`、`modelRegistry`、`resourceLoader` 和 `diagnostics`。这些都是“绑定到有效 cwd 的运行依赖”：项目本地扩展、skills、prompts、AGENTS.md、settings、models.json 都可能随 cwd 变化而不同。
 
 `createAgentSessionServices()` 会解析 cwd/agentDir，创建默认 `AuthStorage`、`SettingsManager`、`ModelRegistry`，构造 `DefaultResourceLoader` 并 `reload()`。然后它会处理扩展在加载阶段积累的 provider registrations，把 `pendingProviderRegistrations` 应用到 `modelRegistry`。这一步解释了为什么 provider 注册不只是 extension runtime 的事，还要进入模型目录。
 
-`AgentSessionRuntime` 定义在 [agent-session-runtime.ts#L68](/source-code/packages/coding-agent/src/core/agent-session-runtime.ts#L68)。它持有当前 `_session`、`_services`、`createRuntime`、`_diagnostics` 和 `_modelFallbackMessage`。当 `switchSession()`、`newSession()`、`fork()`、`importFromJsonl()` 发生时，它先触发 extension 的 before hook，再 `teardownCurrent()`，再调用 factory 创建新 runtime result，最后 `apply()` 替换当前 session/services。
+`AgentSessionRuntime` 定义在 [agent-session-runtime.ts#L68](packages/coding-agent/src/core/agent-session-runtime.ts#L68)。它持有当前 `_session`、`_services`、`createRuntime`、`_diagnostics` 和 `_modelFallbackMessage`。当 `switchSession()`、`newSession()`、`fork()`、`importFromJsonl()` 发生时，它先触发 extension 的 before hook，再 `teardownCurrent()`，再调用 factory 创建新 runtime result，最后 `apply()` 替换当前 session/services。
 
-`AgentSession` 本身仍然只负责当前会话的行为：[agent-session.ts#L252](/source-code/packages/coding-agent/src/core/agent-session.ts#L252)。它可以 prompt、compact、execute bash、navigate tree，但不会替宿主管理“另一个 session 文件成为当前活动 session”这件事。
+`AgentSession` 本身仍然只负责当前会话的行为：[agent-session.ts#L252](packages/coding-agent/src/core/agent-session.ts#L252)。它可以 prompt、compact、execute bash、navigate tree，但不会替宿主管理“另一个 session 文件成为当前活动 session”这件事。
 
 
 **生命周期图**
@@ -60,10 +60,10 @@ flowchart LR
 
 | 环节 | 系统责任 | 源码证据 | 读源码时要确认什么 |
 |---|---|---|---|
-| SDK | 同进程消费 AgentSession | [agent-session-runtime.ts#L68](/source-code/packages/coding-agent/src/core/agent-session-runtime.ts#L68) | 输入从哪里来，输出交给谁，失败由哪一层裁决 |
-| RPC | JSONL stdin/stdout 跨进程协议 | [rpc-mode.ts#L53](/source-code/packages/coding-agent/src/modes/rpc/rpc-mode.ts#L53) | 输入从哪里来，输出交给谁，失败由哪一层裁决 |
-| JSON 模式 | 结构化事件流输出 | [print-mode.ts#L104](/source-code/packages/coding-agent/src/modes/print-mode.ts#L104) | 输入从哪里来，输出交给谁，失败由哪一层裁决 |
-| 运行时服务 | 统一装配 settings/provider/resource/session | [agent-session-runtime.ts#L393](/source-code/packages/coding-agent/src/core/agent-session-runtime.ts#L393) | 输入从哪里来，输出交给谁，失败由哪一层裁决 |
+| SDK | 同进程消费 AgentSession | [agent-session-runtime.ts#L68](packages/coding-agent/src/core/agent-session-runtime.ts#L68) | 输入从哪里来，输出交给谁，失败由哪一层裁决 |
+| RPC | JSONL stdin/stdout 跨进程协议 | [rpc-mode.ts#L53](packages/coding-agent/src/modes/rpc/rpc-mode.ts#L53) | 输入从哪里来，输出交给谁，失败由哪一层裁决 |
+| JSON 模式 | 结构化事件流输出 | [print-mode.ts#L104](packages/coding-agent/src/modes/print-mode.ts#L104) | 输入从哪里来，输出交给谁，失败由哪一层裁决 |
+| 运行时服务 | 统一装配 settings/provider/resource/session | [agent-session-runtime.ts#L393](packages/coding-agent/src/core/agent-session-runtime.ts#L393) | 输入从哪里来，输出交给谁，失败由哪一层裁决 |
 
 **关键代码说明**
 

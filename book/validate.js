@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Validate book structure, heading numbering, and /source-code links.
+ * Validate book structure, heading numbering, and repository-relative source links.
  */
 
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
@@ -12,6 +12,7 @@ const REPO_ROOT = join(__dirname, "..");
 const CHAPTERS_DIR = join(__dirname, "chapters");
 const METADATA_FILE = join(__dirname, "metadata.yaml");
 const DOC_DIRS = [join(REPO_ROOT, "packages", "coding-agent", "docs"), join(REPO_ROOT, "packages", "agent", "docs")];
+const EXTRA_MARKDOWN_FILES = ["README.md", "AGENTS.md"];
 
 function listDocs() {
   const docs = new Set();
@@ -74,12 +75,12 @@ function validateHeading(errors, file, lineNumber, line, chapterNumber, expected
 }
 
 function validateSourceLinks(errors, file, content) {
-  const wrapped = content.match(/`\[[^\]]+\]\(\/source-code\/[^)]+#L[0-9]+\)`/g);
+  const wrapped = content.match(/`\[[^\]]+\]\((?:packages|scripts|book|\.github)\/[^)]+#L[0-9]+\)`/g);
   if (wrapped) {
     for (const link of wrapped) fail(errors, `${file} source link wrapped in backticks: ${link}`);
   }
 
-  const sourceLinks = content.matchAll(/\[[^\]]+\]\(\/source-code\/([^)#]+)#L([0-9]+)\)/g);
+  const sourceLinks = content.matchAll(/\[[^\]]+\]\(((?:packages|scripts|book|\.github)\/[^)#]+)#L([0-9]+)\)/g);
   for (const match of sourceLinks) {
     const sourcePath = join(REPO_ROOT, match[1]);
     const line = Number(match[2]);
@@ -93,9 +94,24 @@ function validateSourceLinks(errors, file, content) {
     }
   }
 
-  const malformed = content.match(/\[[^\]]+\]\(\/source-code\/[^)#]+\)/g);
+  const malformed = content.match(/\[[^\]]+\]\((?:packages|scripts|book|\.github)\/[^)#]+\)/g);
   if (malformed) {
     for (const link of malformed) fail(errors, `${file} source link missing #Lx: ${link}`);
+  }
+
+  const virtualLinks = content.match(/\[[^\]]+\]\(\/source-code\/[^)]+\)/g);
+  if (virtualLinks) {
+    for (const link of virtualLinks) fail(errors, `${file} must not use /source-code virtual links: ${link}`);
+  }
+
+  const rootPackageLinks = content.match(/\[[^\]]+\]\(\/packages\/[^)]+\)/g);
+  if (rootPackageLinks) {
+    for (const link of rootPackageLinks) fail(errors, `${file} source link must be repository-relative, not root-absolute: ${link}`);
+  }
+
+  const originalRepoLinks = content.match(/https:\/\/github\.com\/earendil-works\/pi\/blob\/[^)\s]+/g);
+  if (originalRepoLinks) {
+    for (const link of originalRepoLinks) fail(errors, `${file} must not link source to upstream repo: ${link}`);
   }
 }
 
@@ -159,6 +175,14 @@ function validate() {
       if (line.startsWith("## ")) expectedH2 += 1;
     }
     if (inFence) fail(errors, `${file} has unclosed code fence`);
+    validateSourceLinks(errors, file, content);
+    validateDocsReferences(errors, file, content, docs);
+  }
+
+  for (const file of EXTRA_MARKDOWN_FILES) {
+    const path = join(__dirname, file);
+    if (!existsSync(path)) continue;
+    const content = readFileSync(path, "utf-8");
     validateSourceLinks(errors, file, content);
     validateDocsReferences(errors, file, content, docs);
   }

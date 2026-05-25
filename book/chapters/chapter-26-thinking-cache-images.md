@@ -27,17 +27,17 @@ session.setThinkingLevel("medium");
 
 这不是两个独立功能。图片进入 `PromptOptions.images`，thinking level 进入 agent state，最终一起影响 provider payload。`packages/coding-agent/docs/sdk.md` 的 `PromptOptions` 写明 `images?: ImageContent[]`、`streamingBehavior?: "steer" | "followUp"` 和 `preflightResult`；`packages/coding-agent/docs/json.md` 和 `packages/coding-agent/docs/rpc.md` 则说明流式事件里会出现 `thinking_delta`、`text_delta`、`toolcall_delta`。
 
-图片生成要走另一条路。`packages/ai/README.md` 明确说使用 `getImageModel()`、`getImageModels()`、`getImageProviders()` 和 `generateImages()`，不要用 `stream()` 或 `complete()`。源码入口在 [images.ts#L14](/source-code/packages/ai/src/images.ts#L14)，它根据 `model.api` 找 image provider，然后返回一次性的 `AssistantImages`。
+图片生成要走另一条路。`packages/ai/README.md` 明确说使用 `getImageModel()`、`getImageModels()`、`getImageProviders()` 和 `generateImages()`，不要用 `stream()` 或 `complete()`。源码入口在 [images.ts#L14](packages/ai/src/images.ts#L14)，它根据 `model.api` 找 image provider，然后返回一次性的 `AssistantImages`。
 
 ## 26.3 核心机制
 
-Pi 的消息结构是 block-based。`packages/ai/src/types.ts` 定义 `TextContent`、`ImageContent`、`ThinkingContent`、`ToolCall`，并把 `AssistantMessage.content` 设计成 `(TextContent | ThinkingContent | ToolCall)[]`。阅读入口：[types.ts#L64](/source-code/packages/ai/src/types.ts#L64)。这解释了为什么事件必须带 `contentIndex`：同一个 assistant 消息里可能同时出现文本、thinking 和工具调用，provider 的增量也可能交错到达。
+Pi 的消息结构是 block-based。`packages/ai/src/types.ts` 定义 `TextContent`、`ImageContent`、`ThinkingContent`、`ToolCall`，并把 `AssistantMessage.content` 设计成 `(TextContent | ThinkingContent | ToolCall)[]`。阅读入口：[types.ts#L64](packages/ai/src/types.ts#L64)。这解释了为什么事件必须带 `contentIndex`：同一个 assistant 消息里可能同时出现文本、thinking 和工具调用，provider 的增量也可能交错到达。
 
-thinking 的统一入口是 `SimpleStreamOptions.reasoning` 和模型 `thinkingLevelMap`。在 OpenAI-compatible provider 中，Pi 会根据 `compat.thinkingFormat` 把 Pi 的档位转换成 `reasoning_effort`、`reasoning: { effort }`、`thinking: { type }`、`enable_thinking` 或 `chat_template_kwargs.enable_thinking`：[openai-completions.ts#L89](/source-code/packages/ai/src/providers/openai-completions.ts#L89)。在 Anthropic provider 中，Pi 区分 adaptive thinking 和 budget-based thinking，并把上游 thinking delta 转成统一的 `thinking_delta`：[anthropic.ts#L39](/source-code/packages/ai/src/providers/anthropic.ts#L39)。
+thinking 的统一入口是 `SimpleStreamOptions.reasoning` 和模型 `thinkingLevelMap`。在 OpenAI-compatible provider 中，Pi 会根据 `compat.thinkingFormat` 把 Pi 的档位转换成 `reasoning_effort`、`reasoning: { effort }`、`thinking: { type }`、`enable_thinking` 或 `chat_template_kwargs.enable_thinking`：[openai-completions.ts#L89](packages/ai/src/providers/openai-completions.ts#L89)。在 Anthropic provider 中，Pi 区分 adaptive thinking 和 budget-based thinking，并把上游 thinking delta 转成统一的 `thinking_delta`：[anthropic.ts#L39](packages/ai/src/providers/anthropic.ts#L39)。
 
-缓存不是前端缓存。它是 provider prompt cache，体现在请求 payload 和 usage 统计里。OpenAI-compatible 路径会设置 `prompt_cache_key` 和 `prompt_cache_retention`，并把 `cached_tokens` 归入 `cacheRead`：[openai-completions.ts#L89](/source-code/packages/ai/src/providers/openai-completions.ts#L89)。缓存 key 还要受 provider 限制，`clampOpenAIPromptCacheKey()` 将 key 限制到 64 个字符：[openai-prompt-cache.ts#L3](/source-code/packages/ai/src/providers/openai-prompt-cache.ts#L3)。Anthropic-compatible 路径则通过 `cache_control` 标记 system prompt、工具定义和最近消息。
+缓存不是前端缓存。它是 provider prompt cache，体现在请求 payload 和 usage 统计里。OpenAI-compatible 路径会设置 `prompt_cache_key` 和 `prompt_cache_retention`，并把 `cached_tokens` 归入 `cacheRead`：[openai-completions.ts#L89](packages/ai/src/providers/openai-completions.ts#L89)。缓存 key 还要受 provider 限制，`clampOpenAIPromptCacheKey()` 将 key 限制到 64 个字符：[openai-prompt-cache.ts#L3](packages/ai/src/providers/openai-prompt-cache.ts#L3)。Anthropic-compatible 路径则通过 `cache_control` 标记 system prompt、工具定义和最近消息。
 
-Coding Agent 在创建 session 时还提供防御层。`createAgentSession()` 会把 messages 转换给 LLM；如果 settings 打开 block images，就把 `ImageContent` 替换成 `Image reading is disabled.`：[sdk.ts#L64](/source-code/packages/coding-agent/src/core/sdk.ts#L64)。这说明多模态能力不是只看模型支持，还受用户设置和运行时策略控制。
+Coding Agent 在创建 session 时还提供防御层。`createAgentSession()` 会把 messages 转换给 LLM；如果 settings 打开 block images，就把 `ImageContent` 替换成 `Image reading is disabled.`：[sdk.ts#L64](packages/coding-agent/src/core/sdk.ts#L64)。这说明多模态能力不是只看模型支持，还受用户设置和运行时策略控制。
 
 
 **生命周期图**
@@ -54,10 +54,10 @@ flowchart LR
 
 | 环节 | 系统责任 | 源码证据 | 读源码时要确认什么 |
 |---|---|---|---|
-| 模型注册表 | 内置模型 + models.json + extension provider | [model-registry.ts#L335](/source-code/packages/coding-agent/src/core/model-registry.ts#L335) | 输入从哪里来，输出交给谁，失败由哪一层裁决 |
-| 模型解析 | CLI / scoped models / saved defaults | [model-resolver.ts#L340](/source-code/packages/coding-agent/src/core/model-resolver.ts#L340) | 输入从哪里来，输出交给谁，失败由哪一层裁决 |
-| Provider Adapter | 消息、工具、流式事件归一 | [index.ts#L9](/source-code/packages/ai/src/index.ts#L9) | 输入从哪里来，输出交给谁，失败由哪一层裁决 |
-| 鉴权 | API key / OAuth / request headers | [utils/oauth/index.ts#L55](/source-code/packages/ai/src/utils/oauth/index.ts#L55) | 输入从哪里来，输出交给谁，失败由哪一层裁决 |
+| 模型注册表 | 内置模型 + models.json + extension provider | [model-registry.ts#L335](packages/coding-agent/src/core/model-registry.ts#L335) | 输入从哪里来，输出交给谁，失败由哪一层裁决 |
+| 模型解析 | CLI / scoped models / saved defaults | [model-resolver.ts#L340](packages/coding-agent/src/core/model-resolver.ts#L340) | 输入从哪里来，输出交给谁，失败由哪一层裁决 |
+| Provider Adapter | 消息、工具、流式事件归一 | [index.ts#L9](packages/ai/src/index.ts#L9) | 输入从哪里来，输出交给谁，失败由哪一层裁决 |
+| 鉴权 | API key / OAuth / request headers | [utils/oauth/index.ts#L55](packages/ai/src/utils/oauth/index.ts#L55) | 输入从哪里来，输出交给谁，失败由哪一层裁决 |
 
 **关键代码说明**
 

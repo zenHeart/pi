@@ -8,29 +8,29 @@
 
 本章在全书结构中是 provider 系列的收束点。前面已经讲认证、流式协议、settings、extensions、packages、`pi-ai`；这里把它们汇总到一个用户每天都会接触的动作：启动 Pi、切模型、限制模型循环、添加本地模型、覆盖 provider route。
 
-源码入口是 `ModelRegistry`、`model-resolver`、session services。`ModelRegistry` 类在 [model-registry.ts#L335](/source-code/packages/coding-agent/src/core/model-registry.ts#L335)，默认创建路径在 [model-registry.ts#L350](/source-code/packages/coding-agent/src/core/model-registry.ts#L350)，session services 创建 registry 并注册 extension provider 的逻辑在 [agent-session-services.ts#L137](/source-code/packages/coding-agent/src/core/agent-session-services.ts#L137) 到 [agent-session-services.ts#L150](/source-code/packages/coding-agent/src/core/agent-session-services.ts#L150)。
+源码入口是 `ModelRegistry`、`model-resolver`、session services。`ModelRegistry` 类在 [model-registry.ts#L335](packages/coding-agent/src/core/model-registry.ts#L335)，默认创建路径在 [model-registry.ts#L350](packages/coding-agent/src/core/model-registry.ts#L350)，session services 创建 registry 并注册 extension provider 的逻辑在 [agent-session-services.ts#L137](packages/coding-agent/src/core/agent-session-services.ts#L137) 到 [agent-session-services.ts#L150](packages/coding-agent/src/core/agent-session-services.ts#L150)。
 
 ## 24.2 最小可运行路径
 
 先读 `packages/coding-agent/docs/models.md`、`packages/coding-agent/docs/providers.md`、`packages/coding-agent/docs/usage.md`。
 
-最小使用路径有三条。第一，列模型：`pi --list-models` 或 `pi --list-models sonnet`。`packages/coding-agent/docs/usage.md` 说明 `--list-models [search]` 会列出可用模型。对应 CLI 实现在 [list-models.ts#L29](/source-code/packages/coding-agent/src/cli/list-models.ts#L29)，它调用 `modelRegistry.getAvailable()` 并按 provider/id 展示。
+最小使用路径有三条。第一，列模型：`pi --list-models` 或 `pi --list-models sonnet`。`packages/coding-agent/docs/usage.md` 说明 `--list-models [search]` 会列出可用模型。对应 CLI 实现在 [list-models.ts#L29](packages/coding-agent/src/cli/list-models.ts#L29)，它调用 `modelRegistry.getAvailable()` 并按 provider/id 展示。
 
-第二，选择模型：`pi --provider openai --model gpt-4o`、`pi --model openai/gpt-4o`、`pi --model sonnet:high`。usage docs 明确说 `--model <pattern>` 支持 `provider/id` 和 optional `:<thinking>`。解析函数 `parseModelPattern()` 在 [model-resolver.ts#L189](/source-code/packages/coding-agent/src/core/model-resolver.ts#L189)。
+第二，选择模型：`pi --provider openai --model gpt-4o`、`pi --model openai/gpt-4o`、`pi --model sonnet:high`。usage docs 明确说 `--model <pattern>` 支持 `provider/id` 和 optional `:<thinking>`。解析函数 `parseModelPattern()` 在 [model-resolver.ts#L189](packages/coding-agent/src/core/model-resolver.ts#L189)。
 
-第三，添加本地模型。`packages/coding-agent/docs/models.md` 的 minimal example 用 `~/.pi/agent/models.json` 添加 Ollama provider：`baseUrl`、`api`、`apiKey`、`models`。文档说 `apiKey` 必填但 Ollama 会忽略，所以任意值可用。`/model` 每次打开都会 reload custom models，相关刷新点在 model selector 的 [model-selector.ts#L140](/source-code/packages/coding-agent/src/modes/interactive/components/model-selector.ts#L140)。
+第三，添加本地模型。`packages/coding-agent/docs/models.md` 的 minimal example 用 `~/.pi/agent/models.json` 添加 Ollama provider：`baseUrl`、`api`、`apiKey`、`models`。文档说 `apiKey` 必填但 Ollama 会忽略，所以任意值可用。`/model` 每次打开都会 reload custom models，相关刷新点在 model selector 的 [model-selector.ts#L140](packages/coding-agent/src/modes/interactive/components/model-selector.ts#L140)。
 
 验证时看三个结果：`--list-models` 是否出现模型；`/model` 是否显示模型详情和错误提示；`--model pattern` 是否解析到预期 provider/model/thinking。不要用“模型请求成功”来验证 registry，因为认证、网络、provider payload 是下一层问题。
 
 ## 24.3 核心机制
 
-`ModelRegistry` 的第一层是 built-in models。它调用 `@earendil-works/pi-ai` 的 `getModels(provider)`，再应用 provider overrides 和 modelOverrides。加载入口在 [model-registry.ts#L398](/source-code/packages/coding-agent/src/core/model-registry.ts#L398)，具体遍历 built-in provider 在 [model-registry.ts#L418](/source-code/packages/coding-agent/src/core/model-registry.ts#L418)。
+`ModelRegistry` 的第一层是 built-in models。它调用 `@earendil-works/pi-ai` 的 `getModels(provider)`，再应用 provider overrides 和 modelOverrides。加载入口在 [model-registry.ts#L398](packages/coding-agent/src/core/model-registry.ts#L398)，具体遍历 built-in provider 在 [model-registry.ts#L418](packages/coding-agent/src/core/model-registry.ts#L418)。
 
-第二层是 `models.json`。schema 从 [model-registry.ts#L84](/source-code/packages/coding-agent/src/core/model-registry.ts#L84) 开始描述 thinking、compat、model override 等结构；`loadCustomModels()` 在 [model-registry.ts#L459](/source-code/packages/coding-agent/src/core/model-registry.ts#L459) 读取和校验文件。如果 schema 错误，registry 会保留 built-in models，并通过 `getLoadError()` 暴露错误；`getAvailable()` 的注释在 [model-registry.ts#L619](/source-code/packages/coding-agent/src/core/model-registry.ts#L619) 说明 models.json 有错时只返回 built-in models。
+第二层是 `models.json`。schema 从 [model-registry.ts#L84](packages/coding-agent/src/core/model-registry.ts#L84) 开始描述 thinking、compat、model override 等结构；`loadCustomModels()` 在 [model-registry.ts#L459](packages/coding-agent/src/core/model-registry.ts#L459) 读取和校验文件。如果 schema 错误，registry 会保留 built-in models，并通过 `getLoadError()` 暴露错误；`getAvailable()` 的注释在 [model-registry.ts#L619](packages/coding-agent/src/core/model-registry.ts#L619) 说明 models.json 有错时只返回 built-in models。
 
-第三层是 extension provider。扩展 API 的 `pi.registerProvider()` 类型定义在 [types.ts#L1292](/source-code/packages/coding-agent/src/core/extensions/types.ts#L1292)。session services 在创建 extension runtime 后，把 queued provider registration 刷进 registry，见 [agent-session-services.ts#L150](/source-code/packages/coding-agent/src/core/agent-session-services.ts#L150)。这让扩展可以动态注册企业内部 provider、本地代理或 OAuth provider。
+第三层是 extension provider。扩展 API 的 `pi.registerProvider()` 类型定义在 [types.ts#L1292](packages/coding-agent/src/core/extensions/types.ts#L1292)。session services 在创建 extension runtime 后，把 queued provider registration 刷进 registry，见 [agent-session-services.ts#L150](packages/coding-agent/src/core/agent-session-services.ts#L150)。这让扩展可以动态注册企业内部 provider、本地代理或 OAuth provider。
 
-第四层是 resolver。`resolveModelScope()` 在 [model-resolver.ts#L255](/source-code/packages/coding-agent/src/core/model-resolver.ts#L255) 把 `--models` 或 settings 中的 patterns 变成 scoped model list，支持 wildcard 和 thinking suffix。`resolveInitialModel()` 从 [model-resolver.ts#L478](/source-code/packages/coding-agent/src/core/model-resolver.ts#L478) 开始决定启动时模型：继续会话时优先沿用 session model，否则用 scoped models 第一个，再考虑 default/provider/pattern，最后 fallback 到 availableModels[0]。
+第四层是 resolver。`resolveModelScope()` 在 [model-resolver.ts#L255](packages/coding-agent/src/core/model-resolver.ts#L255) 把 `--models` 或 settings 中的 patterns 变成 scoped model list，支持 wildcard 和 thinking suffix。`resolveInitialModel()` 从 [model-resolver.ts#L478](packages/coding-agent/src/core/model-resolver.ts#L478) 开始决定启动时模型：继续会话时优先沿用 session model，否则用 scoped models 第一个，再考虑 default/provider/pattern，最后 fallback 到 availableModels[0]。
 
 第五层是 UI。model selector 刷新 `models.json`、展示 all/scoped scope、切换 scope；scoped models selector 负责保存和重排 Ctrl+P 循环范围。`packages/coding-agent/docs/keybindings.md` 对应 action 包括 `app.model.select`、`app.model.cycleForward`、`app.model.cycleBackward`，以及 scoped selector 里的 `app.models.save`、`app.models.enableAll`、`app.models.reorderUp`。
 
@@ -49,10 +49,10 @@ flowchart LR
 
 | 环节 | 系统责任 | 源码证据 | 读源码时要确认什么 |
 |---|---|---|---|
-| 模型注册表 | 内置模型 + models.json + extension provider | [model-registry.ts#L335](/source-code/packages/coding-agent/src/core/model-registry.ts#L335) | 输入从哪里来，输出交给谁，失败由哪一层裁决 |
-| 模型解析 | CLI / scoped models / saved defaults | [model-resolver.ts#L340](/source-code/packages/coding-agent/src/core/model-resolver.ts#L340) | 输入从哪里来，输出交给谁，失败由哪一层裁决 |
-| Provider Adapter | 消息、工具、流式事件归一 | [index.ts#L9](/source-code/packages/ai/src/index.ts#L9) | 输入从哪里来，输出交给谁，失败由哪一层裁决 |
-| 鉴权 | API key / OAuth / request headers | [utils/oauth/index.ts#L55](/source-code/packages/ai/src/utils/oauth/index.ts#L55) | 输入从哪里来，输出交给谁，失败由哪一层裁决 |
+| 模型注册表 | 内置模型 + models.json + extension provider | [model-registry.ts#L335](packages/coding-agent/src/core/model-registry.ts#L335) | 输入从哪里来，输出交给谁，失败由哪一层裁决 |
+| 模型解析 | CLI / scoped models / saved defaults | [model-resolver.ts#L340](packages/coding-agent/src/core/model-resolver.ts#L340) | 输入从哪里来，输出交给谁，失败由哪一层裁决 |
+| Provider Adapter | 消息、工具、流式事件归一 | [index.ts#L9](packages/ai/src/index.ts#L9) | 输入从哪里来，输出交给谁，失败由哪一层裁决 |
+| 鉴权 | API key / OAuth / request headers | [utils/oauth/index.ts#L55](packages/ai/src/utils/oauth/index.ts#L55) | 输入从哪里来，输出交给谁，失败由哪一层裁决 |
 
 **关键代码说明**
 
@@ -83,9 +83,9 @@ Pi 把模型 registry 放在 coding-agent 层，而不是只用 `pi-ai` 的 gene
 
 误解一：`models.json` 会替换所有 built-in models。不同意。文档的 merge semantics 是 built-in models kept，custom models by id upsert。只有同 provider 同 id 的 custom model 会替换那一个 built-in entry。
 
-误解二：`/model` 不显示自定义模型就必须重启。不同意。`packages/coding-agent/docs/models.md` 说文件每次打开 `/model` 都 reload，源码也在 [model-selector.ts#L140](/source-code/packages/coding-agent/src/modes/interactive/components/model-selector.ts#L140) 刷新 registry。先检查 JSON schema 和 load error。
+误解二：`/model` 不显示自定义模型就必须重启。不同意。`packages/coding-agent/docs/models.md` 说文件每次打开 `/model` 都 reload，源码也在 [model-selector.ts#L140](packages/coding-agent/src/modes/interactive/components/model-selector.ts#L140) 刷新 registry。先检查 JSON schema 和 load error。
 
-误解三：模型 pattern 只是模糊搜索。不同意。resolver 支持 exact provider/id、name/id matching、thinking suffix、wildcard scope。`parseModelPattern()` 的注释从 [model-resolver.ts#L177](/source-code/packages/coding-agent/src/core/model-resolver.ts#L177) 开始解释 suffix 解析顺序。
+误解三：模型 pattern 只是模糊搜索。不同意。resolver 支持 exact provider/id、name/id matching、thinking suffix、wildcard scope。`parseModelPattern()` 的注释从 [model-resolver.ts#L177](packages/coding-agent/src/core/model-resolver.ts#L177) 开始解释 suffix 解析顺序。
 
 误解四：provider 有模型就一定能调用。不同意。registry 可列出 metadata，但调用还需要 auth、baseUrl、headers、provider API 兼容。`packages/coding-agent/docs/providers.md` 把 API key、OAuth、cloud provider、custom provider 和 credential resolution 分开讲，就是为了避免把 availability 和 call success 混为一谈。
 
@@ -95,7 +95,7 @@ Pi 把模型 registry 放在 coding-agent 层，而不是只用 `pi-ai` 的 gene
 
 第一，写一个 Ollama `models.json`，包含 `baseUrl`、`api: "openai-completions"`、`apiKey: "ollama"`、两个 model id。解释为什么 `apiKey` 仍然要填，为什么 `compat.supportsDeveloperRole` 可能要设为 false。
 
-第二，沿源码解释 `pi --model sonnet:high`：CLI args 得到 pattern，resolver 调用 `parseModelPattern()`，识别 `high` 是 thinking level，再在 available models 中匹配 `sonnet`，返回 model 和 thinkingLevel。要求你能指出 [model-resolver.ts#L189](/source-code/packages/coding-agent/src/core/model-resolver.ts#L189) 和 [model-resolver.ts#L211](/source-code/packages/coding-agent/src/core/model-resolver.ts#L211)。
+第二，沿源码解释 `pi --model sonnet:high`：CLI args 得到 pattern，resolver 调用 `parseModelPattern()`，识别 `high` 是 thinking level，再在 available models 中匹配 `sonnet`，返回 model 和 thinkingLevel。要求你能指出 [model-resolver.ts#L189](packages/coding-agent/src/core/model-resolver.ts#L189) 和 [model-resolver.ts#L211](packages/coding-agent/src/core/model-resolver.ts#L211)。
 
 第三，设计一个企业代理覆盖方案：provider 名称仍用 `anthropic`，只在 `models.json` 里覆盖 `baseUrl` 和 headers，不重写全部 models。说明这样可以保留 built-in model metadata、OAuth/API key 流程和模型选择 UI。
 

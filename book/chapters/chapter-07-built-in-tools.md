@@ -64,17 +64,17 @@ sequenceDiagram
 #### 7.3.2 关键实现剖析
 
 1. **文件修改队列排队机制**：
-   为了防止并行任务干扰，所有的写操作（`write` / `edit`）都会包装在 `withFileMutationQueue`（[file-mutation-queue.ts#L32](/source-code/packages/coding-agent/src/core/tools/file-mutation-queue.ts#L32)）中。其底层通过维护一个以文件物理绝对路径（经过 `realpath` 解析）为 Key 的 Promise 链式锁 Map。这保证了**针对同一个文件的所有写入操作会被强制串行化排队**，而对不同文件的读写则依然可以并发执行。
+   为了防止并行任务干扰，所有的写操作（`write` / `edit`）都会包装在 `withFileMutationQueue`（[file-mutation-queue.ts#L32](packages/coding-agent/src/core/tools/file-mutation-queue.ts#L32)）中。其底层通过维护一个以文件物理绝对路径（经过 `realpath` 解析）为 Key 的 Promise 链式锁 Map。这保证了**针对同一个文件的所有写入操作会被强制串行化排队**，而对不同文件的读写则依然可以并发执行。
 2. **`edit` 工具的精确与模糊匹配算法**：
-   当 `edit` 的 `execute`（[edit.ts#L312](/source-code/packages/coding-agent/src/core/tools/edit.ts#L312)）被调用时，它执行以下文本规整：
-   - 首先利用 `stripBom` 剥离 UTF-8 的 BOM（Byte Order Mark）头（[edit-diff.ts#L137](/source-code/packages/coding-agent/src/core/tools/edit-diff.ts#L137)）。
-   - 将文件的所有换行符转换为统一的 `\n`（LF 格式）（[edit-diff.ts#L19](/source-code/packages/coding-agent/src/core/tools/edit-diff.ts#L19)）。
-   - 调用 `applyEditsToNormalizedContent`：先尝试进行完全一致的 exact matching。如果失败，则进入模糊匹配（Fuzzy Match）模式。模糊匹配在 `normalizeForFuzzyMatch`（[edit-diff.ts#L34](/source-code/packages/coding-agent/src/core/tools/edit-diff.ts#L34)）中将行末的无意义空白字符裁掉，并进行 Unicode 归一化（NFKC）、将中文/特殊符号的智能引号及连字符转换为标准 ASCII 字符（如 `“` 转为 `"`, `–` 转为 `-`）。
+   当 `edit` 的 `execute`（[edit.ts#L312](packages/coding-agent/src/core/tools/edit.ts#L312)）被调用时，它执行以下文本规整：
+   - 首先利用 `stripBom` 剥离 UTF-8 的 BOM（Byte Order Mark）头（[edit-diff.ts#L137](packages/coding-agent/src/core/tools/edit-diff.ts#L137)）。
+   - 将文件的所有换行符转换为统一的 `\n`（LF 格式）（[edit-diff.ts#L19](packages/coding-agent/src/core/tools/edit-diff.ts#L19)）。
+   - 调用 `applyEditsToNormalizedContent`：先尝试进行完全一致的 exact matching。如果失败，则进入模糊匹配（Fuzzy Match）模式。模糊匹配在 `normalizeForFuzzyMatch`（[edit-diff.ts#L34](packages/coding-agent/src/core/tools/edit-diff.ts#L34)）中将行末的无意义空白字符裁掉，并进行 Unicode 归一化（NFKC）、将中文/特殊符号的智能引号及连字符转换为标准 ASCII 字符（如 `“` 转为 `"`, `–` 转为 `-`）。
    - 替换完成后，利用记录的原始行结束符格式（`CRLF` 或 `LF`）进行 `restoreLineEndings`，重新贴回 BOM 头写回磁盘，实现无感的跨平台编辑。
 3. **输出流防溢出截断（`OutputAccumulator`）**：
-   在运行外部 shell 任务（`bash` 工具）时，Pi 使用 `OutputAccumulator`（[output-accumulator.ts#L35](/source-code/packages/coding-agent/src/core/tools/output-accumulator.ts#L35)）来监控并收集物理子进程的 `stdout` 与 `stderr` 流。
-   - **双限约束**：为了控制内存和上下文开销，设置了行数限制（默认 2000 行，[truncate.ts#L11](/source-code/packages/coding-agent/src/core/tools/truncate.ts#L11)）和字节限制（默认 50KB，[truncate.ts#L12](/source-code/packages/coding-agent/src/core/tools/truncate.ts#L12)）。
-   - **日志落盘**：一旦流式日志的总量触发了上述任何一个上限值，`OutputAccumulator` 会在后台自动调用 `ensureTempFile`（[output-accumulator.ts#L211](/source-code/packages/coding-agent/src/core/tools/output-accumulator.ts#L211)）创建一个本地临时 log 文件，将完整的日志流持续实时落盘。而在交还给 LLM 的 `toolResult` 中，则只保留经过 `truncateTail` 裁剪的尾部关键行，并附带一条明确的指引提示：“完整日志已转存至临时文件 /tmp/pi-output-xxx.log，请使用相关读取工具查看”。
+   在运行外部 shell 任务（`bash` 工具）时，Pi 使用 `OutputAccumulator`（[output-accumulator.ts#L35](packages/coding-agent/src/core/tools/output-accumulator.ts#L35)）来监控并收集物理子进程的 `stdout` 与 `stderr` 流。
+   - **双限约束**：为了控制内存和上下文开销，设置了行数限制（默认 2000 行，[truncate.ts#L11](packages/coding-agent/src/core/tools/truncate.ts#L11)）和字节限制（默认 50KB，[truncate.ts#L12](packages/coding-agent/src/core/tools/truncate.ts#L12)）。
+   - **日志落盘**：一旦流式日志的总量触发了上述任何一个上限值，`OutputAccumulator` 会在后台自动调用 `ensureTempFile`（[output-accumulator.ts#L211](packages/coding-agent/src/core/tools/output-accumulator.ts#L211)）创建一个本地临时 log 文件，将完整的日志流持续实时落盘。而在交还给 LLM 的 `toolResult` 中，则只保留经过 `truncateTail` 裁剪的尾部关键行，并附带一条明确的指引提示：“完整日志已转存至临时文件 /tmp/pi-output-xxx.log，请使用相关读取工具查看”。
 
 ## 7.4 设计考量与折中方案
 
@@ -84,7 +84,7 @@ sequenceDiagram
 - **匹配控制度**：自己实现 exact/fuzzy text replacement，可以在出错时精确定位到“是哪一个 oldText 块没有在源文件中找到”，并把这个具体的定位错误灌回给 Agent。这能够指导大模型在下一轮决策中“重新提取更多前后的上下文线索”，自主修复匹配参数，极大地提升了自动化闭环成功率。
 
 #### 7.4.2 倒序应用多块编辑（Reverse Order Edit Application）
-- 在处理单次工具调用内包含多个 disjoint edits 块时，`applyEditsToNormalizedContent`（[edit-diff.ts#L247](/source-code/packages/coding-agent/src/core/tools/edit-diff.ts#L247)）会首先将所有匹配成功的编辑点按 `matchIndex` 升序排列，然后**从后往前（倒序）**依次执行字符切片替换。这避免了先执行的替换改变文件长度，导致后执行的替换字符偏移量（Offset）失效的问题。
+- 在处理单次工具调用内包含多个 disjoint edits 块时，`applyEditsToNormalizedContent`（[edit-diff.ts#L247](packages/coding-agent/src/core/tools/edit-diff.ts#L247)）会首先将所有匹配成功的编辑点按 `matchIndex` 升序排列，然后**从后往前（倒序）**依次执行字符切片替换。这避免了先执行的替换改变文件长度，导致后执行的替换字符偏移量（Offset）失效的问题。
 
 ## 7.5 常见误解与排错指南
 
@@ -104,11 +104,11 @@ sequenceDiagram
 使用 Pi Agent 在本地创建一个 `utils.js` 文件，往里面写入 10 行基础代码。然后发起一次 `edit` 工具调用，故意将要匹配的 `oldText` 尾部空格打乱，观察 Pi 的 fuzzy match 是否被唤醒并成功兼容，检查最终的文件换行符是否被还原。
 
 #### 7.6.2 原理级练习
-深入剖析 [file-mutation-queue.ts#L32](/source-code/packages/coding-agent/src/core/tools/file-mutation-queue.ts#L32) 的 `withFileMutationQueue` 函数。请回答：
+深入剖析 [file-mutation-queue.ts#L32](packages/coding-agent/src/core/tools/file-mutation-queue.ts#L32) 的 `withFileMutationQueue` 函数。请回答：
 1. `registrationQueue` 在整个进程周期中扮演了什么样的串行化防抢占角色？
 2. 它是如何通过 `.then` 链条确保针对**同一个 key** 的前一次文件操作未 settlement 之前，后一次文件操作绝对不被执行的？
 
 #### 7.6.3 扩展级练习
-修改 `read` 工具在 coding-agent 内的实现（参考 [read.ts#L302](/source-code/packages/coding-agent/src/core/tools/read.ts#L302)）。
+修改 `read` 工具在 coding-agent 内的实现（参考 [read.ts#L302](packages/coding-agent/src/core/tools/read.ts#L302)）。
 - **任务**：自定义一个限制配置，使其在首次读取大文件时，默认的最大截断行数限制缩减为 100 行（原来默认是 2000 行）。
 - **要求**：在不改变 `truncate.ts` 内全局常量的前提下，通过向 `truncateHead()` 传递局部的配置选项实现此需求，并编写一个简短的测试 case 运行验证该首屏截断指引提示。

@@ -57,9 +57,9 @@ graph TD
 #### 6.3.2 关键机制源码解析
 
 1. **命令行参数提取**：
-   在 [args.ts#L74](/source-code/packages/coding-agent/src/cli/args.ts#L74)，`parseArgs` 函数对传入的命令行数组进行线性扫描。当匹配到 `--mode` 且指定为 `json` 或 `rpc` 时，将结果记入 `Mode` 字段。若带有 `@` 符号前缀的参数，则在 [args.ts#L165-L166](/source-code/packages/coding-agent/src/cli/args.ts#L165) 处统一将其截出，塞入 `fileArgs` 数组中。
+   在 [args.ts#L74](packages/coding-agent/src/cli/args.ts#L74)，`parseArgs` 函数对传入的命令行数组进行线性扫描。当匹配到 `--mode` 且指定为 `json` 或 `rpc` 时，将结果记入 `Mode` 字段。若带有 `@` 符号前缀的参数，则在 [args.ts#L165-L166](packages/coding-agent/src/cli/args.ts#L165) 处统一将其截出，塞入 `fileArgs` 数组中。
 2. **TTY 自动侦测与管道读取**：
-   在 [main.ts#L639](/source-code/packages/coding-agent/src/main.ts#L639) 中，程序会调用 `readPipedStdin()`。其底层实现为：
+   在 [main.ts#L639](packages/coding-agent/src/main.ts#L639) 中，程序会调用 `readPipedStdin()`。其底层实现为：
    ```typescript
    if (process.stdin.isTTY) {
        return undefined;
@@ -67,19 +67,19 @@ graph TD
    ```
    如果 `stdin.isTTY` 为 `false`（说明输入来自管道，例如 `cat file | pi`），`readPipedStdin()` 将自动唤醒 `process.stdin` 读取数据流并返回。
 3. **非交互式运行模式决定**：
-   程序在 [main.ts#L99](/source-code/packages/coding-agent/src/main.ts#L99) 的 `resolveAppMode` 中决定最终执行渲染器。如果 `parsed.print` 为 `true`，或者 `stdin.isTTY` 为 `false`，则最终路由为 `print`（或 `json`）模式，不再拉起交互式 TUI，避开终端界面的初始化开销。
+   程序在 [main.ts#L99](packages/coding-agent/src/main.ts#L99) 的 `resolveAppMode` 中决定最终执行渲染器。如果 `parsed.print` 为 `true`，或者 `stdin.isTTY` 为 `false`，则最终路由为 `print`（或 `json`）模式，不再拉起交互式 TUI，避开终端界面的初始化开销。
 4. **`@` 文件参数的装配**：
-   在 [main.ts#L128](/source-code/packages/coding-agent/src/main.ts#L128) 处，解析出的 `fileArgs` 被传入 `processFileArguments()`（[file-processor.ts#L24](/source-code/packages/coding-agent/src/cli/file-processor.ts#L24)），它会依次读取文件内容、检测类型、对图片进行自动尺寸压缩，并构建起初始的 Attachment。
+   在 [main.ts#L128](packages/coding-agent/src/main.ts#L128) 处，解析出的 `fileArgs` 被传入 `processFileArguments()`（[file-processor.ts#L24](packages/coding-agent/src/cli/file-processor.ts#L24)），它会依次读取文件内容、检测类型、对图片进行自动尺寸压缩，并构建起初始的 Attachment。
 
 ## 6.4 设计考量与折中方案
 
 #### 6.4.1 只读工具链（Read-Only Tooling）的设计防御性
 为什么 Pi 没有像很多商业 Agent 一样，由服务器或内核层提供复杂的 OAuth 弹窗权限验证？
-- **简易而严密**：Pi 选择了在启动装配阶段，由 `buildSessionOptions`（[main.ts#L369-L377](/source-code/packages/coding-agent/src/main.ts#L369)）进行工具白名单过滤。如果命令行配置了 `--tools read,grep,find,ls`，工具装配器只向底层的 `Agent` 挂载这四个只读类的核心工具。由于底层 loop 无法调用没有挂载的工具，从根本上绝育了模型生成 `rm -rf` 并在 `bash` 里执行物理毁灭的通道。
+- **简易而严密**：Pi 选择了在启动装配阶段，由 `buildSessionOptions`（[main.ts#L369-L377](packages/coding-agent/src/main.ts#L369)）进行工具白名单过滤。如果命令行配置了 `--tools read,grep,find,ls`，工具装配器只向底层的 `Agent` 挂载这四个只读类的核心工具。由于底层 loop 无法调用没有挂载的工具，从根本上绝育了模型生成 `rm -rf` 并在 `bash` 里执行物理毁灭的通道。
 
 #### 6.4.2 Stdin 管道数据优先于命令行文本
 
-- **行为统一**：当同时提供管道输入与命令行尾随文本时（如 `cat code.ts | pi -p "分析这段代码"`），[initial-message.ts#L20](/source-code/packages/coding-agent/src/cli/initial-message.ts#L20) 内部实现会将管道数据合并并作为上下文的引用前缀。这确保了在非 TTY 下，数据流向是统一且确定性的，方便与各类 Shell pipeline 结合。
+- **行为统一**：当同时提供管道输入与命令行尾随文本时（如 `cat code.ts | pi -p "分析这段代码"`），[initial-message.ts#L20](packages/coding-agent/src/cli/initial-message.ts#L20) 内部实现会将管道数据合并并作为上下文的引用前缀。这确保了在非 TTY 下，数据流向是统一且确定性的，方便与各类 Shell pipeline 结合。
 
 ## 6.5 常见误解与排错指南
 
@@ -90,7 +90,7 @@ graph TD
 
 #### 6.5.2 误区：只读审查参数 `--tools` 可以被大模型在对话中通过指令绕过
 - **现象**：有开发者担心大模型足够“聪明”后，可以通过自己生成 shell 语句并向 Pi 呼吁“请帮我安装并使用写工具”来强行修改文件。
-- **原因**：LLM 只能建议调用哪些在 Schema 注册的工具，工具的实体注册和执行路由（[agent-loop.ts#L373](/source-code/packages/agent/src/agent-loop.ts#L373)）完全由 Pi 运行时控制。如果 `--tools` 未声明 `write` 和 `bash`，运行时根本就没有这些工具的执行实体，模型发起的任何额外工具调用都只会在 Safe Points 触发 ToolNotFound 异常。
+- **原因**：LLM 只能建议调用哪些在 Schema 注册的工具，工具的实体注册和执行路由（[agent-loop.ts#L373](packages/agent/src/agent-loop.ts#L373)）完全由 Pi 运行时控制。如果 `--tools` 未声明 `write` 和 `bash`，运行时根本就没有这些工具的执行实体，模型发起的任何额外工具调用都只会在 Safe Points 触发 ToolNotFound 异常。
 
 ## 6.6 课后练习
 
@@ -102,7 +102,7 @@ cat package.json | pi -p "列出所有开发依赖"
 验证其退出状态码（`echo $?`）是否为 0。
 
 #### 6.6.2 原理级练习
-阅读并分析 [file-processor.ts#L24](/source-code/packages/coding-agent/src/cli/file-processor.ts#L24) 的 `processFileArguments` 方法。请回答：
+阅读并分析 [file-processor.ts#L24](packages/coding-agent/src/cli/file-processor.ts#L24) 的 `processFileArguments` 方法。请回答：
 1. 它是如何解析和区分文本文件和二进制图片文件（PNG/JPG/GIF）的？
 2. 如果传入的 `@file` 路径是一个不存在的文件，它是会直接抛出进程异常崩溃，还是以 diagnostics 警告形式收集？
 

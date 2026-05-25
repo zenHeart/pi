@@ -61,13 +61,13 @@ flowchart TD
 
 | 核心环节 | 系统责任 | 源码证据 | 核心审计点 |
 | :--- | :--- | :--- | :--- |
-| **命令行入口** | 解析参数，构建初始配置 | [main.ts#L424](/source-code/packages/coding-agent/src/main.ts#L424) | 确认哪些 CLI 参数能覆盖 `settings.json` 的全局配置 |
-| **参数解析** | 将 arguments 转为 Args 结构 | [args.ts#L59](/source-code/packages/coding-agent/src/cli/args.ts#L59) | 确认模式（mode）、工具白名单（tools）和资源开关的默认值 |
-| **会话运行时** | 组装模型、工具、设置与扩展资源 | [agent-session.ts#L252](/source-code/packages/coding-agent/src/core/agent-session.ts#L252) | 检查 `prompt()` 提交时如何调度 slash commands |
-| **提交入口** | 接收 Prompt 并进行前置校验与派发 | [agent-session.ts#L962](/source-code/packages/coding-agent/src/core/agent-session.ts#L962) | 审计当代理忙碌时，新的 Prompt 是如何加入缓冲队列的 |
-| **状态化代理** | 保存 Turn 历史，管理 steer/followUp 消息 | [agent.ts#L166](/source-code/packages/agent/src/agent.ts#L166) | 检查代理状态（State）是如何随着每一轮交互流转的 |
-| **核心执行循环**| 驱动 LLM 响应与 Tool 调用的闭环 | [agent-loop.ts#L95](/source-code/packages/agent/src/agent-loop.ts#L95) | 确认工具的返回结果是如何流式合并回上下文的 |
-| **工具批次控制**| 裁决工具是并行（Parallel）还是串行执行 | [agent-loop.ts#L384](/source-code/packages/agent/src/agent-loop.ts#L384) | 检查当批次内含有 `sequential` 执行模式的工具时如何进行阻断 |
+| **命令行入口** | 解析参数，构建初始配置 | [main.ts#L424](packages/coding-agent/src/main.ts#L424) | 确认哪些 CLI 参数能覆盖 `settings.json` 的全局配置 |
+| **参数解析** | 将 arguments 转为 Args 结构 | [args.ts#L59](packages/coding-agent/src/cli/args.ts#L59) | 确认模式（mode）、工具白名单（tools）和资源开关的默认值 |
+| **会话运行时** | 组装模型、工具、设置与扩展资源 | [agent-session.ts#L252](packages/coding-agent/src/core/agent-session.ts#L252) | 检查 `prompt()` 提交时如何调度 slash commands |
+| **提交入口** | 接收 Prompt 并进行前置校验与派发 | [agent-session.ts#L962](packages/coding-agent/src/core/agent-session.ts#L962) | 审计当代理忙碌时，新的 Prompt 是如何加入缓冲队列的 |
+| **状态化代理** | 保存 Turn 历史，管理 steer/followUp 消息 | [agent.ts#L166](packages/agent/src/agent.ts#L166) | 检查代理状态（State）是如何随着每一轮交互流转的 |
+| **核心执行循环**| 驱动 LLM 响应与 Tool 调用的闭环 | [agent-loop.ts#L95](packages/agent/src/agent-loop.ts#L95) | 确认工具的返回结果是如何流式合并回上下文的 |
+| **工具批次控制**| 裁决工具是并行（Parallel）还是串行执行 | [agent-loop.ts#L384](packages/agent/src/agent-loop.ts#L384) | 检查当批次内含有 `sequential` 执行模式的工具时如何进行阻断 |
 
 ## 0.4 设计考量与折衷
 

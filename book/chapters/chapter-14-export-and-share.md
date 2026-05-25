@@ -39,7 +39,7 @@ pi --mode json -p "List files" 2>/dev/null
 
 #### 14.3.1 HTML 渲染管线与模板合成
 
-静态 HTML 导出的核心入口为 [exportSessionToHtml](/source-code/packages/coding-agent/src/core/export-html/index.ts#L236)，而底层针对文件导出的 CLI 封装则为 [exportFromFile](/source-code/packages/coding-agent/src/core/export-html/index.ts#L288)。它们的执行流程包括以下关键步骤：
+静态 HTML 导出的核心入口为 [exportSessionToHtml](packages/coding-agent/src/core/export-html/index.ts#L236)，而底层针对文件导出的 CLI 封装则为 [exportFromFile](packages/coding-agent/src/core/export-html/index.ts#L288)。它们的执行流程包括以下关键步骤：
 
 1. **载入静态资源**：从全局配置目录读取基础 of `template.html`、`template.css`、`template.js`，以及 vendored 版本的 `marked.min.js` 与 `highlight.min.js`。
 2. **提取主题色彩**：通过 `getResolvedThemeColors` 获取当前的 TUI 终端色彩配置，为 HTML 文件中 CSS 的 `--exportPageBg`、`--exportCardBg` 等变量动态注入一致的颜色方案，达到“所见即所得”的配色统一。
@@ -48,13 +48,13 @@ pi --mode json -p "List files" 2>/dev/null
 
 #### 14.3.2 自定义工具的 TUI-to-HTML 渲染桥接
 
-为了实现扩展性，Pi 引入了 [ToolHtmlRenderer](/source-code/packages/coding-agent/src/core/export-html/index.ts#L15) 渲染器接口。
+为了实现扩展性，Pi 引入了 [ToolHtmlRenderer](packages/coding-agent/src/core/export-html/index.ts#L15) 渲染器接口。
 对于普通的内置工具（如 `bash`、`read`、`write`），其结构非常标准，由前端 `template.js` 内置的渲染模板在浏览器端直接生成 HTML DOM；
-对于由扩展自定义开发的工具，由于其包含特制的 UI 组件或经过转义的 ANSI 终端彩字，Pi 在导出时会调用 [preRenderCustomTools](/source-code/packages/coding-agent/src/core/export-html/index.ts#L183) 阶段。它在后端通过 `toolRenderer.renderCall` 和 `toolRenderer.renderResult` 先将这些特殊工具块预先转换好（把 ANSI 转义码转换成带颜色标签的 HTML 片段），然后存入 `renderedTools` 表中一同编码输出。当浏览器端发现该 `toolCallId` 存在预渲染内容时，直接展示该 HTML 块，实现了完美的跨环境渲染映射。
+对于由扩展自定义开发的工具，由于其包含特制的 UI 组件或经过转义的 ANSI 终端彩字，Pi 在导出时会调用 [preRenderCustomTools](packages/coding-agent/src/core/export-html/index.ts#L183) 阶段。它在后端通过 `toolRenderer.renderCall` 和 `toolRenderer.renderResult` 先将这些特殊工具块预先转换好（把 ANSI 转义码转换成带颜色标签的 HTML 片段），然后存入 `renderedTools` 表中一同编码输出。当浏览器端发现该 `toolCallId` 存在预渲染内容时，直接展示该 HTML 块，实现了完美的跨环境渲染映射。
 
 #### 14.3.3 /share 分享底层流程
 
-在交互 TUI 中执行的 `/share` 控制逻辑位于 [interactive-mode.ts#L5042](/source-code/packages/coding-agent/src/modes/interactive/interactive-mode.ts#L5042)。其内部机制如下：
+在交互 TUI 中执行的 `/share` 控制逻辑位于 [interactive-mode.ts#L5042](packages/coding-agent/src/modes/interactive/interactive-mode.ts#L5042)。其内部机制如下：
 
 ```mermaid
 sequenceDiagram
@@ -84,19 +84,19 @@ sequenceDiagram
 
 #### 14.3.4 JSON mode 事件封装
 
-在 CLI 模式下如果指定了 `--mode json`，事件的发射流由 [AgentSessionEvent](/source-code/packages/coding-agent/src/core/agent-session.ts#L123) 提供定义支持。
+在 CLI 模式下如果指定了 `--mode json`，事件的发射流由 [AgentSessionEvent](packages/coding-agent/src/core/agent-session.ts#L123) 提供定义支持。
 它是对低层 Agent 抽象事件（`AgentEvent`）的包装和重构，丢弃了容易引起机器解析混乱的流式块片段，将 `compaction` 改变、自动重试状态以及会话信息改变包装成标准的一行一行的 JSON string 输出到 stdout，确保任何消费它的进程都能像读取结构化数据库变化一样监控 Agent。
 
 #### 14.3.5 源码责任表
 
 | 环节 | 系统责任 | 源码证据 | 关键确认点 |
 |---|---|---|---|
-| 核心模板拼装 | 读取文件模版，将 Base64 编码 of entries 以及 CSS 变量组装并写入磁盘 | [index.ts#L236](/source-code/packages/coding-agent/src/core/export-html/index.ts#L236) | 检查是否能在会话为空或未落地时抛出合理的异常 |
-| 任意文件转 HTML | 独立在无运行时状态下直接解析 JSONL 并利用 SM 进行渲染 | [index.ts#L288](/source-code/packages/coding-agent/src/core/export-html/index.ts#L288) | 检查目标路径在不存在时是否有友好提示 |
-| 扩展工具预渲染 | 针对非模板渲染工具，在后端将复杂的 ANSI 块转换为静态可折叠的 HTML 字符串 | [index.ts#L183](/source-code/packages/coding-agent/src/core/export-html/index.ts#L183) | 检查没有提供 toolRenderer 时是否会自动跳过 |
-| 分享任务调度 | 控制 Loader 加载指示器，拉起异步 gh 进程并拦截取消信号进行子进程销毁 | [interactive-mode.ts#L5042](/source-code/packages/coding-agent/src/modes/interactive/interactive-mode.ts#L5042) | 确认在发生错误时是否能安全地执行 tmpFile 删除清理 |
-| 运行时事件广播 | 定义跨 turn、跨重试及压缩边界的规范化 JSON 流式事件协议 | [agent-session.ts#L123](/source-code/packages/coding-agent/src/core/agent-session.ts#L123) | 确认 `agent_end` 是否携带了最终的完整消息链 |
-| 外部导出入口 | 提供高阶的 AgentSession 封装，负责拼装 toolRenderer 后下传给导出管线 | [agent-session.ts#L2973](/source-code/packages/coding-agent/src/core/agent-session.ts#L2973) | 确认导出时的色彩主题是否符合 settings.json 的配置 |
+| 核心模板拼装 | 读取文件模版，将 Base64 编码 of entries 以及 CSS 变量组装并写入磁盘 | [index.ts#L236](packages/coding-agent/src/core/export-html/index.ts#L236) | 检查是否能在会话为空或未落地时抛出合理的异常 |
+| 任意文件转 HTML | 独立在无运行时状态下直接解析 JSONL 并利用 SM 进行渲染 | [index.ts#L288](packages/coding-agent/src/core/export-html/index.ts#L288) | 检查目标路径在不存在时是否有友好提示 |
+| 扩展工具预渲染 | 针对非模板渲染工具，在后端将复杂的 ANSI 块转换为静态可折叠的 HTML 字符串 | [index.ts#L183](packages/coding-agent/src/core/export-html/index.ts#L183) | 检查没有提供 toolRenderer 时是否会自动跳过 |
+| 分享任务调度 | 控制 Loader 加载指示器，拉起异步 gh 进程并拦截取消信号进行子进程销毁 | [interactive-mode.ts#L5042](packages/coding-agent/src/modes/interactive/interactive-mode.ts#L5042) | 确认在发生错误时是否能安全地执行 tmpFile 删除清理 |
+| 运行时事件广播 | 定义跨 turn、跨重试及压缩边界的规范化 JSON 流式事件协议 | [agent-session.ts#L123](packages/coding-agent/src/core/agent-session.ts#L123) | 确认 `agent_end` 是否携带了最终的完整消息链 |
+| 外部导出入口 | 提供高阶的 AgentSession 封装，负责拼装 toolRenderer 后下传给导出管线 | [agent-session.ts#L2973](packages/coding-agent/src/core/agent-session.ts#L2973) | 确认导出时的色彩主题是否符合 settings.json 的配置 |
 
 ## 14.4 为什么这样设计
 
@@ -136,7 +136,7 @@ proc?.kill();
 
 #### 14.6.2 原理练习：追踪 preRenderCustomTools 拦截细节
 
-阅读 [preRenderCustomTools](/source-code/packages/coding-agent/src/core/export-html/index.ts#L183) 的源码。如果在 session.jsonl 中记录了一条自定义的扩展工具消息，但在调用 `exportSessionToHtml` 时没有向 options 传入 `toolRenderer`，该自定义工具在 HTML 中会呈现为什么格式？
+阅读 [preRenderCustomTools](packages/coding-agent/src/core/export-html/index.ts#L183) 的源码。如果在 session.jsonl 中记录了一条自定义的扩展工具消息，但在调用 `exportSessionToHtml` 时没有向 options 传入 `toolRenderer`，该自定义工具在 HTML 中会呈现为什么格式？
 
 #### 14.6.3 扩展练习：构建 JSON mode 重演播放器
 

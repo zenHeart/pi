@@ -4,7 +4,7 @@
 
 Extension 是 Pi 的 TypeScript 扩展点。`packages/coding-agent/docs/extensions.md` 开头说 extensions can subscribe to lifecycle events, register custom tools callable by the LLM, add commands, and more。和 prompt template、skill 不同，extension 是会被加载执行的代码，因此能力更强，风险也更高。
 
-前端工程师可以把 extension 理解成“运行在 Pi 进程里的插件模块”。它的默认导出接收 `ExtensionAPI`，可以注册事件、工具、命令、快捷键、flag、message renderer、provider，也可以通过 `ctx.ui` 与 TUI 交互。类型文件开头列出的能力就是边界说明：订阅 lifecycle events、注册 LLM-callable tools、注册 commands/shortcuts/flags、通过 UI primitives 交互，见 [types.ts#L1084](/source-code/packages/coding-agent/src/core/extensions/types.ts#L1084)。
+前端工程师可以把 extension 理解成“运行在 Pi 进程里的插件模块”。它的默认导出接收 `ExtensionAPI`，可以注册事件、工具、命令、快捷键、flag、message renderer、provider，也可以通过 `ctx.ui` 与 TUI 交互。类型文件开头列出的能力就是边界说明：订阅 lifecycle events、注册 LLM-callable tools、注册 commands/shortcuts/flags、通过 UI primitives 交互，见 [types.ts#L1084](packages/coding-agent/src/core/extensions/types.ts#L1084)。
 
 ## 18.2 最小使用路径
 
@@ -20,17 +20,17 @@ export default function (pi: ExtensionAPI) {
 }
 ```
 
-加载由 jiti 完成，所以 TypeScript 不需要预编译。源码的 loader 通过 `createJiti()` 导入 extension path，要求 default export 是函数，然后创建 `ExtensionAPI` 调用 factory，见 [loader.ts#L331](/source-code/packages/coding-agent/src/core/extensions/loader.ts#L331) 和 [loader.ts#L368](/source-code/packages/coding-agent/src/core/extensions/loader.ts#L368)。如果 factory 返回 Promise，loader 会 await；docs 也说明 async initialization completes before `session_start`、`resources_discover` 和 queued provider registrations flush。
+加载由 jiti 完成，所以 TypeScript 不需要预编译。源码的 loader 通过 `createJiti()` 导入 extension path，要求 default export 是函数，然后创建 `ExtensionAPI` 调用 factory，见 [loader.ts#L331](packages/coding-agent/src/core/extensions/loader.ts#L331) 和 [loader.ts#L368](packages/coding-agent/src/core/extensions/loader.ts#L368)。如果 factory 返回 Promise，loader 会 await；docs 也说明 async initialization completes before `session_start`、`resources_discover` 和 queued provider registrations flush。
 
 ## 18.3 ExtensionAPI 的分类
 
 ExtensionAPI 可以分成三类。
 
-第一类是注册表。`registerTool()` 给模型增加可调用工具；`registerCommand()` 增加 `/name`；`registerShortcut()` 增加键盘入口；`registerFlag()` 增加 CLI flag；`registerMessageRenderer()` 改变自定义消息显示。源码中这些方法只是写入当前 extension 对象的 map，见 [loader.ts#L183](/source-code/packages/coding-agent/src/core/extensions/loader.ts#L183)。这说明注册发生在加载期，运行时再由 AgentSession 和 TUI 读取这些 registry。
+第一类是注册表。`registerTool()` 给模型增加可调用工具；`registerCommand()` 增加 `/name`；`registerShortcut()` 增加键盘入口；`registerFlag()` 增加 CLI flag；`registerMessageRenderer()` 改变自定义消息显示。源码中这些方法只是写入当前 extension 对象的 map，见 [loader.ts#L183](packages/coding-agent/src/core/extensions/loader.ts#L183)。这说明注册发生在加载期，运行时再由 AgentSession 和 TUI 读取这些 registry。
 
-第二类是事件。`pi.on("tool_call", ...)`、`pi.on("before_agent_start", ...)` 等把 handler 放进 `extension.handlers`，真正执行由 ExtensionRunner 决定。类型里列出了 `resources_discover`、session、agent、message、tool、model、input 等事件，见 [types.ts#L1084](/source-code/packages/coding-agent/src/core/extensions/types.ts#L1084)。
+第二类是事件。`pi.on("tool_call", ...)`、`pi.on("before_agent_start", ...)` 等把 handler 放进 `extension.handlers`，真正执行由 ExtensionRunner 决定。类型里列出了 `resources_discover`、session、agent、message、tool、model、input 等事件，见 [types.ts#L1084](packages/coding-agent/src/core/extensions/types.ts#L1084)。
 
-第三类是动作。`sendMessage()`、`sendUserMessage()`、`appendEntry()`、`setActiveTools()`、`setModel()`、`registerProvider()` 等依赖 runner 绑定后的 runtime。加载期还没绑定核心动作时，runtime 里多数方法是 throwing stub；provider registration 会先排队，绑定后 flush，见 [loader.ts#L120](/source-code/packages/coding-agent/src/core/extensions/loader.ts#L120) 和 [runner.ts#L301](/source-code/packages/coding-agent/src/core/extensions/runner.ts#L301)。
+第三类是动作。`sendMessage()`、`sendUserMessage()`、`appendEntry()`、`setActiveTools()`、`setModel()`、`registerProvider()` 等依赖 runner 绑定后的 runtime。加载期还没绑定核心动作时，runtime 里多数方法是 throwing stub；provider registration 会先排队，绑定后 flush，见 [loader.ts#L120](packages/coding-agent/src/core/extensions/loader.ts#L120) 和 [runner.ts#L301](packages/coding-agent/src/core/extensions/runner.ts#L301)。
 
 
 **生命周期图**
@@ -47,10 +47,10 @@ flowchart LR
 
 | 环节 | 系统责任 | 源码证据 | 读源码时要确认什么 |
 |---|---|---|---|
-| 配置与包 | 声明资源来源和优先级 | [resource-loader.ts#L398](/source-code/packages/coding-agent/src/core/resource-loader.ts#L398) | 输入从哪里来，输出交给谁，失败由哪一层裁决 |
-| Skills | 模型行为说明书 | [resource-loader.ts#L510](/source-code/packages/coding-agent/src/core/resource-loader.ts#L510) | 输入从哪里来，输出交给谁，失败由哪一层裁决 |
-| Prompt Templates | 可复用任务入口 | [resource-loader.ts#L533](/source-code/packages/coding-agent/src/core/resource-loader.ts#L533) | 输入从哪里来，输出交给谁，失败由哪一层裁决 |
-| Extensions | 代码能力与 UI/provider 注册 | [types.ts#L1084](/source-code/packages/coding-agent/src/core/extensions/types.ts#L1084) | 输入从哪里来，输出交给谁，失败由哪一层裁决 |
+| 配置与包 | 声明资源来源和优先级 | [resource-loader.ts#L398](packages/coding-agent/src/core/resource-loader.ts#L398) | 输入从哪里来，输出交给谁，失败由哪一层裁决 |
+| Skills | 模型行为说明书 | [resource-loader.ts#L510](packages/coding-agent/src/core/resource-loader.ts#L510) | 输入从哪里来，输出交给谁，失败由哪一层裁决 |
+| Prompt Templates | 可复用任务入口 | [resource-loader.ts#L533](packages/coding-agent/src/core/resource-loader.ts#L533) | 输入从哪里来，输出交给谁，失败由哪一层裁决 |
+| Extensions | 代码能力与 UI/provider 注册 | [types.ts#L1084](packages/coding-agent/src/core/extensions/types.ts#L1084) | 输入从哪里来，输出交给谁，失败由哪一层裁决 |
 
 **关键代码说明**
 
@@ -58,11 +58,11 @@ flowchart LR
 
 ## 18.4 为什么要有 Runner
 
-Loader 负责“把模块加载成 Extension 对象”，Runner 负责“在正确时机执行 Extension 对象”。这个分层避免 extension factory 直接接触 AgentSession 内部状态。Runner 绑定 UI、session、model registry、shutdown、reload 等能力，创建惰性 context，让事件处理器在调用时读取当前状态，见 [runner.ts#L266](/source-code/packages/coding-agent/src/core/extensions/runner.ts#L266) 和 [runner.ts#L569](/source-code/packages/coding-agent/src/core/extensions/runner.ts#L569)。
+Loader 负责“把模块加载成 Extension 对象”，Runner 负责“在正确时机执行 Extension 对象”。这个分层避免 extension factory 直接接触 AgentSession 内部状态。Runner 绑定 UI、session、model registry、shutdown、reload 等能力，创建惰性 context，让事件处理器在调用时读取当前状态，见 [runner.ts#L266](packages/coding-agent/src/core/extensions/runner.ts#L266) 和 [runner.ts#L569](packages/coding-agent/src/core/extensions/runner.ts#L569)。
 
-这对 `/reload`、`/new`、`/resume` 很关键。旧 extension context 会被标记 stale；如果扩展在 session replacement 后继续使用捕获的旧 ctx，会抛出明确错误，见 [runner.ts#L466](/source-code/packages/coding-agent/src/core/extensions/runner.ts#L466)。设计上，extension 可以扩展行为，但不能持有过期 session 的权力。
+这对 `/reload`、`/new`、`/resume` 很关键。旧 extension context 会被标记 stale；如果扩展在 session replacement 后继续使用捕获的旧 ctx，会抛出明确错误，见 [runner.ts#L466](packages/coding-agent/src/core/extensions/runner.ts#L466)。设计上，extension 可以扩展行为，但不能持有过期 session 的权力。
 
-Runner 还承担冲突与安全边界。工具同名时 first registration per name wins，见 [runner.ts#L373](/source-code/packages/coding-agent/src/core/extensions/runner.ts#L373)。快捷键会和内置 keybinding 冲突检查，保留 interrupt、exit、model select 等保留键，见 [runner.ts#L60](/source-code/packages/coding-agent/src/core/extensions/runner.ts#L60)。
+Runner 还承担冲突与安全边界。工具同名时 first registration per name wins，见 [runner.ts#L373](packages/coding-agent/src/core/extensions/runner.ts#L373)。快捷键会和内置 keybinding 冲突检查，保留 interrupt、exit、model select 等保留键，见 [runner.ts#L60](packages/coding-agent/src/core/extensions/runner.ts#L60)。
 
 
 **创建者视角的设计不变量**

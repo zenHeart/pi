@@ -33,7 +33,7 @@ tmux kill-session -t pi-test
 
 #### 快捷键系统架构
 
-快捷键定义在 [`packages/tui/src/keybindings.ts`](/source-code/packages/tui/src/keybindings.ts#L7) 的 `Keybindings` 接口中，以语义名称（如 `"tui.editor.cursorUp"`）为键，通过声明合并支持下游包扩展：
+快捷键定义在 [`packages/tui/src/keybindings.ts`](packages/tui/src/keybindings.ts#L7) 的 `Keybindings` 接口中，以语义名称（如 `"tui.editor.cursorUp"`）为键，通过声明合并支持下游包扩展：
 
 ```typescript
 export interface Keybindings {
@@ -53,7 +53,7 @@ export interface Keybindings {
 },
 ```
 
-`KeybindingsManager` 类（[`keybindings.ts#L155`](/source-code/packages/tui/src/keybindings.ts#L155)）负责合并默认绑定与用户自定义绑定，并检测冲突（两个动作绑定到同一按键）。用户通过 `settings.json` 中的 `keybindings` 字段覆盖默认值：
+`KeybindingsManager` 类（[`keybindings.ts#L155`](packages/tui/src/keybindings.ts#L155)）负责合并默认绑定与用户自定义绑定，并检测冲突（两个动作绑定到同一按键）。用户通过 `settings.json` 中的 `keybindings` 字段覆盖默认值：
 
 ```json
 {
@@ -65,7 +65,7 @@ export interface Keybindings {
 
 #### 剪贴板图片的多平台读取
 
-剪贴板图片读取由 [`clipboard-image.ts`](/source-code/packages/coding-agent/src/utils/clipboard-image.ts#L254) 的 `readClipboardImage()` 函数实现，平台检测逻辑如下：
+剪贴板图片读取由 [`clipboard-image.ts`](packages/coding-agent/src/utils/clipboard-image.ts#L254) 的 `readClipboardImage()` 函数实现，平台检测逻辑如下：
 
 ```typescript
 // clipboard-image.ts#L267
@@ -157,7 +157,7 @@ AGENTS.md 明确规定：**不能硬编码按键检查**（如 `matchesKey(data,
 
 #### 原理级训练
 
-阅读 [`clipboard-image.ts#L254`](/source-code/packages/coding-agent/src/utils/clipboard-image.ts#L254) 的 `readClipboardImage()`，画出完整的平台检测和 fallback 流程图，标注在每个平台（macOS/Linux X11/Linux Wayland/WSL）下使用的是哪个后端以及原因。
+阅读 [`clipboard-image.ts#L254`](packages/coding-agent/src/utils/clipboard-image.ts#L254) 的 `readClipboardImage()`，画出完整的平台检测和 fallback 流程图，标注在每个平台（macOS/Linux X11/Linux Wayland/WSL）下使用的是哪个后端以及原因。
 
 #### 扩展级训练
 

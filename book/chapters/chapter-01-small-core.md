@@ -50,9 +50,9 @@ my-project/
 
 在运行时，所有的外部资源都是通过 `ResourceLoader` 接口来进行统一加载和刷新的。
 
-- **接口定义**：[resource-loader.ts#L28](/source-code/packages/coding-agent/src/core/resource-loader.ts#L28) 中定义了 `ResourceLoader` 必须提供 `getExtensions`、`getSkills`、`getPrompts` 等标准方法。
-- **具体实现**：`DefaultResourceLoader` 实现于 [resource-loader.ts#L152](/source-code/packages/coding-agent/src/core/resource-loader.ts#L152)，它在构造时会解析 `cwd` 和全局的 `agentDir`。
-- **刷新过程**：当我们在终端触发 `/reload` 或者是调用 `reload()` 方法时（代码见 [resource-loader.ts#L321](/source-code/packages/coding-agent/src/core/resource-loader.ts#L321)），系统会依次启动 settings 重新读取、PackageManager 解析包来源，最后把全局（Global）、项目（Project）以及临时（Temporary）目录下的三路路径进行路径合并。
+- **接口定义**：[resource-loader.ts#L28](packages/coding-agent/src/core/resource-loader.ts#L28) 中定义了 `ResourceLoader` 必须提供 `getExtensions`、`getSkills`、`getPrompts` 等标准方法。
+- **具体实现**：`DefaultResourceLoader` 实现于 [resource-loader.ts#L152](packages/coding-agent/src/core/resource-loader.ts#L152)，它在构造时会解析 `cwd` 和全局的 `agentDir`。
+- **刷新过程**：当我们在终端触发 `/reload` 或者是调用 `reload()` 方法时（代码见 [resource-loader.ts#L321](packages/coding-agent/src/core/resource-loader.ts#L321)），系统会依次启动 settings 重新读取、PackageManager 解析包来源，最后把全局（Global）、项目（Project）以及临时（Temporary）目录下的三路路径进行路径合并。
 
 下列 Mermaid 图展示了 `ResourceLoader` 在 `reload` 时的三路路径扫描与资源树归并逻辑：
 
@@ -87,7 +87,7 @@ flowchart TD
 #### 1.4.2 配置合并的 Deep Merge 算法
 
 在 settings.json 的合并上，我们没有采用简单的深拷贝覆盖，而是通过 `deepMergeSettings` 算法进行递归合并。
-其源码逻辑位于 [settings-manager.ts#L118](/source-code/packages/coding-agent/src/core/settings-manager.ts#L118)：
+其源码逻辑位于 [settings-manager.ts#L118](packages/coding-agent/src/core/settings-manager.ts#L118)：
 ```typescript
 function deepMergeSettings(base: Settings, overrides: Settings): Settings {
 	const result: Settings = { ...base };
@@ -126,7 +126,7 @@ function deepMergeSettings(base: Settings, overrides: Settings): Settings {
 创建一个项目本地级 `.pi` 目录，并在其中编写一个 `settings.json`，配置项目专用的默认模型与默认思考等级，启动 Pi 并确认 footer 的输出已变成项目级配置所期望的默认值。
 
 #### 1.6.2 原理分析题
-阅读 [resource-loader.ts#L890](/source-code/packages/coding-agent/src/core/resource-loader.ts#L890) 的 `detectExtensionConflicts` 源码，解释 `ResourceLoader` 在加载多个扩展（Extensions）时，是如何检测并上报工具（Tools）和参数标志（Flags）冲突的？如果冲突发生，Pi 是选择崩溃退出，还是继续运行？
+阅读 [resource-loader.ts#L890](packages/coding-agent/src/core/resource-loader.ts#L890) 的 `detectExtensionConflicts` 源码，解释 `ResourceLoader` 在加载多个扩展（Extensions）时，是如何检测并上报工具（Tools）和参数标志（Flags）冲突的？如果冲突发生，Pi 是选择崩溃退出，还是继续运行？
 
 #### 1.6.3 扩展实践题
 编写一个极简脚本，导入 `DefaultResourceLoader` 并加载当前工作目录，调用其 `reload()` 方法，并在控制台上把当前环境已成功加载的所有 skills 和 prompts 列表打印出来。
