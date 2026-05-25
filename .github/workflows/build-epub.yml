@@ -109,7 +109,7 @@ jobs:
           <head>
             <meta charset="utf-8">
             <meta name="viewport" content="width=device-width, initial-scale=1">
-            <title>Pi Agent 专家之书</title>
+            <title>Pi Agent 源码实战指南</title>
             <meta name="description" content="基于 zenHeart/pi fork 源码与 docs 的 Coding Agent 专家教材。">
             <meta name="theme-color" content="#f7f3ec">
             <style>
@@ -265,8 +265,8 @@ jobs:
               <section class="hero" aria-labelledby="title">
                 <div>
                   <p class="eyebrow">ZenHeart · Pi Agent Handbook</p>
-                  <h1 id="title">Pi Agent 专家之书</h1>
-                  <p class="lead">基于 pi 源码与 docs 的 Coding Agent 专家教材，覆盖终端使用、Agent 内核、扩展生态、模型 Provider、SDK/RPC 与团队落地。</p>
+                  <h1 id="title">Pi Agent 源码实战指南</h1>
+                  <p class="lead">基于 pi 源码与 docs 的 Coding Agent 实战教材，覆盖终端使用、Agent 内核、扩展生态、模型 Provider、SDK/RPC 与团队落地。</p>
                   <ul class="stats" aria-label="书籍规模">
                     <li>40 章</li>
                     <li>8 个部分</li>
@@ -278,19 +278,19 @@ jobs:
                     <a class="link" href="https://github.com/zenHeart/pi/tree/codex/pi-book-rewrite">查看 GitHub 源码</a>
                   </div>
                 </div>
-                <img class="cover" src="cover.svg?v=${asset_version}" alt="Pi Agent 专家之书 EPUB 封面">
+                <img class="cover" src="cover.svg?v=${asset_version}" alt="Pi Agent 源码实战指南 EPUB 封面">
               </section>
               <footer>由 GitHub Actions 在 book 分支推送时自动构建并发布到 gh-pages。</footer>
             </main>
           </body>
           </html>
           HTML
-          grep -q "Pi Agent 专家之书" /tmp/gh-pages/index.html
+          grep -q "Pi Agent 源码实战指南" /tmp/gh-pages/index.html
           grep -q "40 章" /tmp/gh-pages/index.html
           grep -q "cover.svg?v=${asset_version}" /tmp/gh-pages/index.html
           grep -q "pi-agent-handbook.epub?v=${asset_version}" /tmp/gh-pages/index.html
-          grep -q "专家之书" /tmp/gh-pages/cover.svg
-          grep -q "40章 · 8个部分" /tmp/gh-pages/cover.svg
+          grep -q "源码实战指南" /tmp/gh-pages/cover.svg
+          grep -q "40 章 · 源码对照版" /tmp/gh-pages/cover.svg
 
       - name: Publish to gh-pages branch
         run: |
@@ -306,10 +306,10 @@ jobs:
           fi
           cp /tmp/gh-pages/* .
           touch .nojekyll
-          grep -q "Pi Agent 专家之书" index.html
+          grep -q "Pi Agent 源码实战指南" index.html
           grep -q "40 章" index.html
-          grep -q "专家之书" cover.svg
-          grep -q "40章 · 8个部分" cover.svg
+          grep -q "源码实战指南" cover.svg
+          grep -q "40 章 · 源码对照版" cover.svg
           git add pi-agent-handbook.epub cover.svg index.html .nojekyll
           if git diff --staged --quiet; then
             echo "No changes to publish"

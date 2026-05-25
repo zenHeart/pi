@@ -1,11 +1,11 @@
-title: "Pi Agent 专家之书"
-subtitle: "从终端使用到内核、扩展、模型与团队落地"
+title: "Pi Agent 源码实战指南"
+subtitle: "从使用到复刻 Coding Agent"
 author: "ZenHeart"
 language: "zh-CN"
 date: "2026-05-25"
 version: "5.0.0"
 publisher: "ZenHeart"
-description: "一本面向前端工程师的 Pi Agent 专家级教材，基于仓库源码与 docs 重写。"
+description: "一本面向前端工程师的 Pi Agent 源码实战教材，基于仓库源码与 docs 重写。"
 rights: "Copyright © 2026 ZenHeart"
 
 chapters:
