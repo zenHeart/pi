@@ -265,10 +265,10 @@ jobs:
                 <div>
                   <p class="eyebrow">ZenHeart · Code Agent Handbook</p>
                   <h1 id="title">Pi Agent 实战</h1>
-                  <p class="lead">基于 pi 源码的 Code Agent 系统设计指南，覆盖 Agent Loop、Tool、Context、Permission、MCP、Eval 与交付路径。</p>
+                  <p class="lead">基于 pi 源码与 docs 的 Coding Agent 专家教材，覆盖终端使用、Agent 内核、扩展生态、模型 Provider、SDK/RPC 与团队落地。</p>
                   <ul class="stats" aria-label="书籍规模">
-                    <li>24 章</li>
-                    <li>7 层架构</li>
+                    <li>40 章</li>
+                    <li>8 个部分</li>
                     <li>源码对照</li>
                     <li>自动构建 EPUB</li>
                   </ul>

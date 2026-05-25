@@ -24,7 +24,8 @@ function readMetadata() {
   const yaml = readFileSync(METADATA_FILE, "utf-8");
   const title = yaml.match(/^title:\s*"([^"]+)"/m)?.[1] ?? "Pi Agent Book";
   const author = yaml.match(/^author:\s*"([^"]+)"/m)?.[1] ?? "Pi Agent Handbook";
-  const lang = yaml.match(/^lang:\s*([^\n]+)/m)?.[1]?.replace(/"/g, "").trim() ?? "zh-CN";
+  const lang =
+    yaml.match(/^lang(?:uage)?:\s*([^\n]+)/m)?.[1]?.replace(/"/g, "").trim() ?? "zh-CN";
   const lines = yaml.split(/\r?\n/);
   const chaptersBlock = [];
   const chapters = [];
