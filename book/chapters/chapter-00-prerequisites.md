@@ -1,293 +1,90 @@
-# 第0章 前置知识：进入 Agent 世界的 6 把钥匙
+# 第0章 前端工程师进入 Agent 世界的前置知识
 
-> **本章目标**：补齐进入 Agent 领域的最小知识。
-> **pi 源码对照**：
-> - `packages/ai/src/` — AI API 客户端（Streaming SSE 解析）
-> - `packages/agent/src/agent-loop.ts` — AsyncGenerator 状态机模式
-> - `packages/coding-agent/src/core/tools/` — 工具系统（Zod 校验）
-> - `packages/coding-agent/src/utils/frontmatter.ts` — frontmatter 解析
->
-> **本章结束能做什么**：能读懂后续章节中的消息协议、工具调用、AsyncGenerator、Zod 和 frontmatter。
-> **阅读时间**：约 60 分钟，含 6 个动手练习。
+## 0.1 本章解决的问题
 
----
+本书默认读者会 JavaScript、TypeScript、React 或 Vue，但从未写过 agent harness。这个起点没有问题。pi 的核心不是 Python notebook，也不是模型魔法，而是一个 TypeScript 运行时：它把用户输入、模型流式输出、工具调用、文件系统状态、会话树、扩展事件和终端 UI 组织成可恢复的工作循环。
 
-## 0.1 为什么需要这章
+读 pi 源码前必须先建立五个模型：消息协议、流式事件、工具闭环、追加式持久化、运行时边界。低层 loop 入口是 [agent-loop.ts#L31](/source-code/packages/agent/src/agent-loop.ts#L31)，状态封装从 [agent.ts#L166](/source-code/packages/agent/src/agent.ts#L166) 开始，产品层会话由 [agent-session.ts#L252](/source-code/packages/coding-agent/src/core/agent-session.ts#L252) 承担。后续章节会反复回到这三个位置。
 
-后续章节基于真实 TypeScript 源码的逐行剖析，假设读者熟悉：
+## 0.2 前端工程师需要补齐的 TypeScript/Node 模型
 
-- LLM 消息协议（role、content、tool_use、tool_result）
-- AsyncGenerator 与 `yield` 状态机
-- Zod 运行时校验
-- Markdown + frontmatter 的配置写法
+前端工程师最容易把 agent 理解成“一个会调用工具的聊天组件”。这个类比只对了一半。React 组件的核心是 state -> render；agent harness 的核心是 transcript -> model request -> streamed events -> side effects -> transcript。它也有状态，但状态会跨进程、跨会话、跨工具调用持久化。
 
-如果以上任何一项不熟悉，本章是**前置补课**。每节配一个最小练习，跑通即可继续。
+| 模式 | 在 pi 中的含义 | 阅读源码时关注什么 |
+|---|---|---|
+| discriminated union | `AgentMessage`、`AgentEvent`、`SessionEntry` 通过 `role` 或 `type` 分支 | 每个分支是否能进入模型、是否能持久化、是否只给 UI 看 |
+| `AsyncIterable` | provider 的流式输出不是一次性字符串 | `for await` 中什么时候更新 UI，什么时候拿最终 message |
+| `AbortSignal` | 用户按 Escape、RPC abort、工具超时都需要向下传播 | signal 是否传到 provider、工具、扩展 UI 和 shell |
+| schema 校验 | 工具参数来自模型，不能相信 TypeScript 类型 | tool call 执行前是否做运行时校验 |
+| append-only file | session 是 JSONL 树，不是内存数组 | 每次副作用后是否能从文件恢复 |
+| reducer | 流式 delta 合并成最终 assistant message | partial message 和最终 message 的边界 |
+| adapter | provider、工具、UI、扩展都被适配成统一接口 | 新增能力时是否污染核心 loop |
 
----
+这些模型比具体函数名更重要。函数名会变化，但责任边界不会轻易变化。
 
-## 1. LLM API 基础：从一次 Chat Completion 说起
+## 0.3 LLM 消息不是 UI 消息
 
-### 1.1 Messages API 的最小心智模型
+pi 有多层消息。低层 `Agent` 默认只把 `user`、`assistant`、`toolResult` 转成 provider 能理解的消息，默认转换逻辑在 [agent.ts#L31](/source-code/packages/agent/src/agent.ts#L31)。coding-agent 产品层还扩展了 `bashExecution`、`custom`、`compactionSummary`、`branchSummary` 等内部消息，再由 [messages.ts#L148](/source-code/packages/coding-agent/src/core/messages.ts#L148) 判断哪些进入模型上下文。
 
-主流 LLM API 都把对话建模为「消息序列」：
+这个分离是 agent harness 的第一条设计红线：用户看到的、session 保存的、模型看到的，不应该被混成一种结构。否则你无法表达“这条 shell 输出只记录但不发给模型”“这个扩展通知只给 UI 看”“这个 branch summary 只在恢复上下文时使用”。
 
-```typescript
-type Message =
-  | { role: 'system'; content: string }      // 行为约束、身份定义（System Prompt）
-  | { role: 'user';   content: ContentBlock[] }  // 用户输入或工具结果
-  | { role: 'assistant'; content: ContentBlock[] } // 模型回复
+```mermaid
+flowchart LR
+  User[用户输入] --> Internal[AgentMessage]
+  Internal --> Session[JSONL Session Entry]
+  Internal --> Convert[convertToLlm]
+  Convert --> Provider[Provider Message]
+  Provider --> Stream[流式事件]
+  Stream --> Internal
 ```
 
-`ContentBlock` 可以是文本、图片、思考过程，也可以是工具调用和工具结果：
+## 0.4 Tool Use 闭环
 
-```typescript
-type ContentBlock =
-  | { type: 'text'; text: string }
-  | { type: 'image'; source: { type: 'base64' | 'url'; data: string } }
-  | { type: 'thinking'; thinking: string }           // 推理链（部分模型支持）
-  | { type: 'tool_use'; id: string; name: string; input: object }
-  | { type: 'tool_result'; tool_use_id: string; content: string | ContentBlock[] }
-```
+工具调用不是模型执行代码。模型只能输出结构化请求，例如“调用 `read`，参数是某个路径”。runtime 负责查找工具、校验参数、执行副作用、截断输出、构造 tool result，再把结果回灌给模型。准备工具调用的核心在 [agent-loop.ts#L562](/source-code/packages/agent/src/agent-loop.ts#L562)，tool result message 的构造在 [agent-loop.ts#L727](/source-code/packages/agent/src/agent-loop.ts#L727)。
 
-**最关键的不变式**：每个 `tool_use` 必须有配对的 `tool_result`，且 `tool_use_id` 一致。
+最小闭环是：
 
-### 1.2 流式响应（SSE）
+1. 用户消息进入上下文。
+2. provider 流式返回 assistant message。
+3. assistant message 中出现 `toolCall` block。
+4. loop 根据工具名找到 `AgentTool`。
+5. schema 校验参数。
+6. 执行工具并捕获错误。
+7. 生成 `toolResult` 消息。
+8. 把 tool result 追加到上下文。
+9. 如果任务未结束，继续下一轮 provider 请求。
 
-Agent 必须能**边收边处理**：模型一边生成文本，Agent 一边把工具调用 dispatch 出去。这通过 SSE（Server-Sent Events）实现：
+如果第 7 步缺失，模型不知道工具执行结果。如果第 8 步缺失，工具调用只是一次本地副作用，不会形成可推理的链路。如果错误没有变成 tool result，模型无法根据失败调整策略。
 
-```
-event: message_start
-data: {"type":"message_start","message":{...}}
+## 0.5 流式事件是运行时协议
 
-event: content_block_start
-data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}
+pi 不把模型响应当成一个最终字符串。`streamAssistantResponse()` 从 [agent-loop.ts#L275](/source-code/packages/agent/src/agent-loop.ts#L275) 开始消费 provider 事件，并向上发出 `message_start`、`message_update`、`message_end` 等 agent 事件。这个事件流同时服务 TUI、RPC、JSON mode、测试、扩展和 session 持久化。
 
-event: content_block_delta
-data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}
+前端工程师可以把它类比为服务端状态同步协议。`message_update` 类似增量 patch，适合 UI 实时渲染；`message_end` 才是可以稳定写入 session 的最终事实；`tool_execution_*` 是工具副作用的观察点；`agent_end` 是一次运行的结算点。
 
-event: message_delta
-data: {"type":"message_delta","delta":{"stop_reason":"end_turn"}}
+## 0.6 文件系统式状态
 
-event: message_stop
-data: {"type":"message_stop"}
-```
+pi 不是把所有配置放进数据库。它大量使用文件系统：
 
-`stop_reason` 是 Agent Loop 退出路径判断的核心字段：
-- `end_turn`：模型自主结束
-- `tool_use`：模型想调用工具，Agent 需要执行后回喂 `tool_result`
-- `max_tokens`：达到上限（需要主动续写或返回错误）
-- `stop_sequence`：命中停止序列
+- `~/.pi/agent` 保存全局配置、认证、packages、sessions。
+- 项目 `.pi` 保存项目级 settings、extensions、skills、themes、prompts。
+- `AGENTS.md` / `CLAUDE.md` 提供项目规则。
+- session 是追加式 JSONL。
+- packages 贡献 extensions、skills、prompt templates、themes。
 
-### 1.3 prompt cache
+资源加载由 `DefaultResourceLoader` 负责，它会加载 context files、extensions、prompts、themes 和 skills，入口见 [resource-loader.ts#L152](/source-code/packages/coding-agent/src/core/resource-loader.ts#L152)。这种设计让 pi 像开发工具而不是 SaaS：配置可审计、可复制、可放进项目目录。
 
-主流 API 支持 **prompt prefix caching**：用 `cache_control: { type: 'ephemeral' }` 标记某段内容可缓存。
+## 0.7 本书阅读方法
 
-```json
-{
-  "usage": {
-    "input_tokens": 120,
-    "cache_creation_input_tokens": 8000,
-    "cache_read_input_tokens": 0,
-    "output_tokens": 456
-  }
-}
-```
+每章按同一条线索阅读：用户怎么用；runtime 做了什么；模型能看到什么；harness 私下保存什么；源码落在哪里；失败时如何恢复；如果你要复刻，哪些是 MVP，哪些是生产级能力。
 
-缓存策略：「**静态前缀 + 动态后缀**」——不变的内容（系统指令、工具定义）放前面打 `cache_control`，变化的内容（用户消息）放后面。
+读源码时不要先追所有调用链。先问六个问题：
 
----
+1. 这个模块解决什么不可省略的问题。
+2. 它拥有哪一类状态。
+3. 它向模型暴露什么。
+4. 它执行哪些副作用。
+5. 它如何持久化。
+6. 它允许哪些扩展点。
 
-## 2. Function Calling / Tool Use 协议
-
-### 2.1 工具定义
-
-工具定义是 JSON Schema 描述：
-
-```json
-{
-  "name": "get_weather",
-  "description": "Get current weather of a city",
-  "input_schema": {
-    "type": "object",
-    "properties": {
-      "city": { "type": "string" },
-      "unit": { "type": "string", "enum": ["celsius", "fahrenheit"] }
-    },
-    "required": ["city"]
-  }
-}
-```
-
-### 2.2 完整调用闭环
-
-```
-1. Agent → API: 发送 messages + tools
-2. API → Agent: stop_reason=tool_use，content 含 { tool_use, id: T1, name: "get_weather" }
-3. Agent 本地执行工具，得到结果 "22°C, sunny"
-4. Agent → API: 追加 { role: 'user', content: [{ tool_result, tool_use_id: T1, content: "22°C" }] }
-5. API → Agent: 模型基于工具结果继续生成
-```
-
-**并行工具调用**：一次 assistant 消息可以包含多个 `tool_use` block，Agent 应**同时执行**它们。
-
-### 2.3 pi 源码对照
-
-pi 中的工具系统在 `packages/coding-agent/src/core/tools/`：
-
-```typescript
-// packages/coding-agent/src/core/tools/index.ts
-export interface Tool {
-  name: string
-  description: string
-  inputSchema: ZodType
-  execute(input: unknown): Promise<ToolResult>
-}
-```
-
----
-
-## 3. AsyncGenerator：用 yield 写状态机
-
-### 3.1 为什么 Agent Loop 用 Generator
-
-Agent 是一个「边跑边产生事件」的过程。AsyncGenerator 让外部（UI/测试/日志）都能用同一套 `for await` 语法精确观察每一步。
-
-```typescript
-async function* simpleLoop(): AsyncGenerator<string, number> {
-  yield 'started'
-  await sleep(100)
-  yield 'middle'
-  return 42
-}
-
-for await (const event of simpleLoop()) {
-  console.log(event) // started, middle
-}
-```
-
-### 3.2 pi 源码对照
-
-pi 的 Agent Loop 使用 AsyncGenerator 模式暴露事件：
-
-```typescript
-// packages/agent/src/agent-loop.ts
-export async function* runAgentLoop(
-  harness: AgentHarness,
-  session: AgentSession,
-): AsyncGenerator<AgentEvent, AgentResult> {
-  let turnCount = 0
-  while (true) {
-    yield { type: 'turn_start', turnCount }
-    const result = yield* executeTurn(harness, session)
-    if (result.done) return result.value
-    turnCount++
-  }
-}
-```
-
----
-
-## 4. TypeScript 类型系统精要 + Zod 运行时校验
-
-### 4.1 Zod：API 边界的运行时盾牌
-
-**LLM 输出工具调用参数时，不能信任 TS 类型**——它在编译期就被擦除了。运行时必须用 Zod 校验：
-
-```typescript
-import { z } from 'zod'
-
-const ReadToolInput = z.object({
-  file_path: z.string().min(1),
-  offset: z.number().int().nonnegative().optional(),
-  limit: z.number().int().positive().optional(),
-})
-
-// 工具执行入口
-const parsed = ReadToolInput.safeParse(rawInput)
-if (!parsed.success) {
-  return toolError(parsed.error.format())
-}
-const input: ReadToolInput = parsed.data
-```
-
-**为什么用 `safeParse` 而不是 `parse`**：`safeParse` 返回 `{ success: false, error }`，可以把结构化错误回喂给模型让它自我修正。
-
-### 4.2 pi 源码对照
-
-pi 的工具系统广泛使用 Zod 进行输入校验：
-
-```typescript
-// packages/coding-agent/src/core/tools/read.ts
-export const ReadArgs = z.object({
-  file_path: z.string(),
-  offset: z.number().int().nonnegative().optional(),
-  limit: z.number().int().positive().optional(),
-})
-```
-
----
-
-## 5. 文件系统作为数据库：Markdown + Frontmatter
-
-### 5.1 为什么不用数据库
-
-pi 的所有配置、记忆、命令、技能都存在文件系统上的 Markdown 文件里：
-
-| 维度 | Markdown 文件系统 | SQLite |
-|------|-----------------|--------|
-| 透明度 | 用户可直接编辑 | 需要专用工具 |
-| 版本控制 | 天然 git 友好 | binary 不可读 |
-| 启动开销 | 读几个文件 | 进程初始化 |
-
-### 5.2 frontmatter 写法
-
-```markdown
----
-name: my-skill
-description: Does X when Y
-allowed-tools:
-  - Read
-  - Bash
-model: claude-3-5-haiku
----
-
-# Skill body
-
-Detailed instructions here...
-```
-
-### 5.3 pi 源码对照
-
-```typescript
-// packages/coding-agent/src/utils/frontmatter.ts
-export function parseFrontmatter(content: string): {
-  data: Record<string, unknown>
-  content: string
-} {
-  const match = content.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/)
-  if (!match) return { data: {}, content }
-  return {
-    data: yaml.parse(match[1]),
-    content: match[2],
-  }
-}
-```
-
-### 5.4 多级配置合并
-
-同一类配置分布在多个层级，后加载的覆盖先加载的同名条目，但 deny 类规则永远累加。
-
----
-
-## 6. 练习
-
-1. 调用一次 LLM API：发送 system + user message，打印 stop_reason、input_tokens、output_tokens
-2. 手写一个 `get_weather` 工具完整闭环
-3. 把 `miniLoop` 跑起来，让它接收 `abortSignal`
-4. 用 Zod 写一个 `BashToolInput` schema 并导出 JSON Schema
-5. 写一个 Ink TUI 组件
-6. 写一个 markdown 解析器，提取 frontmatter 并合并 `Map<string, SkillDef>`
-
----
-
-> **下一步阅读**：[第1章 架构总览](./chapter-01-architecture-overview.md) — 7 层 Harness 架构总览。
+能回答这六个问题，你就不是在背 pi 的实现，而是在学习如何设计自己的 agent harness。

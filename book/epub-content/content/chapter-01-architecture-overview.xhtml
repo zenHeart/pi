@@ -2,7 +2,7 @@
 <!DOCTYPE html>
 <html xmlns="http://www.w3.org/1999/xhtml">
 <head>
-  <title>第1章 架构总览</title>
+  <title>第1章 pi 用户旅程与产品架构</title>
   <style>
     body { font-family: 'Noto Sans SC', sans-serif; line-height: 1.8; margin: 1em; }
     h1, h2, h3, h4 { color: #333; }
@@ -16,283 +16,30 @@
   </style>
 </head>
 <body>
-<p><h1>第1章 架构总览：基于 pi 源码的核心模块图</h1></p><p>> <strong>本章目标</strong>：建立对 pi Code Agent 核心架构的全局理解，以 <code>packages/coding-agent/src/core/</code> 的真实源码结构为事实基准。
->
-> <strong>pi 源码对照</strong>：
-> - <code>packages/coding-agent/src/core/index.ts</code> — 核心模块导出（架构地图）
-> - <code>packages/coding-agent/src/core/agent-session.ts</code> — 核心会话抽象
-> - <code>packages/coding-agent/src/core/agent-session-runtime.ts</code> — 会话运行时工厂
-> - <code>packages/coding-agent/src/core/agent-session-services.ts</code> — 会话服务创建
->
-> <strong>本章结束能做什么</strong>：能画出 pi 核心架构图，解释 <code>AgentSession</code> 如何串联工具系统、扩展系统、上下文管理、持久化四大模块。
-> <strong>阅读时间</strong>：约 20 分钟。</p><p>---</p><p><h2>1.1 为什么看 pi 架构</h2></p><p>pi 是一个<strong>代码领域 Code Agent 产品</strong>，同时也是一个<strong>可扩展的 Agent 框架</strong>。它的核心价值在于：三种运行模式（交互/TUI、打印/RPC、命令行）共享同一套 <code>AgentSession</code>，而扩展系统、工具系统、压缩系统都围绕这个核心类编织在一起。</p><p>理解 pi 架构 = 理解一个工业级 Agent 系统如何用最小复杂度实现最大可扩展性。</p><p><h3>1.1.1 pi 的三层封装</h3></p><p><pre><code class="language-">┌─────────────────────────────────────────────────────────────┐
-│  Mode 层（modes/）                                         │
-│  interactive · print · rpc                                  │
-│  负责 I/O、键盘事件、终端渲染                                │
-├─────────────────────────────────────────────────────────────┤
-│  AgentSession 层（core/）                                   │
-│  会话抽象、事件订阅、prompt 编排、工具管理                     │
-│  compaction、model 选择、扩展绑定                            │
-├─────────────────────────────────────────────────────────────┤
-│  Agent Core 层（packages/agent/）                            │
-│  纯状态机：无 I/O、只接收消息、yield 事件                     │
-└─────────────────────────────────────────────────────────────┘
-</code></pre></p><p><strong>最关键的设计</strong>：Mode 层（交互/TUI）和 Agent Core 完全解耦。<code>AgentSession</code> 作为中间层，把 Agent Core 的状态机包装成用户可见的会话概念，同时接入扩展系统、工具系统、压缩系统。</p><p><h3>1.1.2 核心模块目录结构</h3></p><p>pi 源码核心在 <code>packages/coding-agent/src/core/</code>：</p><p><pre><code class="language-">core/
-├── agent-session.ts          ← ⭐ 核心会话抽象（所有模式的共享基座）
-├── agent-session-runtime.ts  ← Session 运行时工厂
-├── agent-session-services.ts ← 创建 Session 所需的服务
-├── session-manager.ts        ← Session 持久化（JSONL + tree 结构）
-├── messages.ts              ← 自定义消息类型 + convertToLlm
-├── system-prompt.ts         ← buildSystemPrompt 构建
-├── skills.ts               ← Skills 加载、验证、prompt 注入
-├── slash-commands.ts       ← 斜杠命令注册与分发
-│
-├── tools/                  ← 工具系统（工厂模式）
-│   ├── index.ts           ← createToolDefinition() 工厂
-│   ├── bash.ts, read.ts, edit.ts, write.ts
-│   ├── grep.ts, find.ts, ls.ts
-│   ├── truncate.ts        ← 结果截断
-│   └── file-mutation-queue.ts ← 文件变更队列
-│
-├── compaction/             ← 上下文压缩系统
-│   ├── index.ts, compaction.ts
-│   ├── branch-summarization.ts
-│   └── utils.ts
-│
-├── extensions/            ← 扩展系统（插件架构）
-│   ├── index.ts, types.ts
-│   ├── loader.ts          ← jiti 加载 + 虚拟模块
-│   ├── runner.ts          ← ExtensionRunner 生命周期
-│   └── wrapper.ts         ← 工具包装
-│
-├── event-bus.ts           ← 事件总线
-├── settings-manager.ts     ← 多级配置
-├── auth-storage.ts        ← API Key / OAuth 存储
-├── model-registry.ts      ← 多 Provider 模型注册
-├── resource-loader.ts     ← skills/prompts/themes 加载
-└── ...（其他支持模块）
-</code></pre></p><p>---</p><p><h2>1.2 AgentSession：核心抽象</h2></p><p><h3>1.2.1 为什么需要 AgentSession</h3></p><p>三种运行模式（interactive / print / rpc）都需要：
-<ul><li>管理 Agent 的生命周期</li>
-<li>订阅 Agent 事件</li>
-<li>处理工具调用</li>
-<li>管理会话持久化</li>
-<li>处理上下文压缩</li>
-</ul>
-如果没有 <code>AgentSession</code>，每个模式都要自己写这些逻辑——代码重复、行为不一致。</p><p><code>AgentSession</code> 的设计目标：<strong>一个类，三种模式共用</strong>。</p><p><h3>1.2.2 AgentSession 核心职责</h3></p><p><pre><code class="language-typescript">// packages/coding-agent/src/core/agent-session.ts（关键接口）
-export class AgentSession {
-    // --- 生命周期 ---
-    subscribe(listener: AgentSessionEventListener): () => void  // 事件订阅
-    dispose(): void  // 清理资源</p><p>    // --- 状态访问（只读） ---
-    get state(): AgentState
-    get model(): Model<any> | undefined
-    get thinkingLevel(): ThinkingLevel
-    get isStreaming(): boolean
-    get systemPrompt(): string</p><p>    // --- Prompting ---
-    prompt(text: string, options?: PromptOptions): Promise<void>
-    steer(text: string, images?: ImageContent[]): Promise<void>  // 流式插队
-    followUp(text: string, images?: ImageContent[]): Promise<void>  // 流式排队
-    sendCustomMessage(message, options?): Promise<void></p><p>    // --- Model 管理 ---
-    setModel(model: Model<any>): Promise<void>
-    cycleModel(direction?: 'forward' | 'backward'): Promise<ModelCycleResult | undefined></p><p>    // --- 工具管理 ---
-    getActiveToolNames(): string[]
-    getAllTools(): ToolInfo[]
-    setActiveToolsByName(toolNames: string[]): void</p><p>    // --- Compaction ---
-    get isCompacting(): boolean
-}
-</code></pre></p><p><h3>1.2.3 Session 生命周期图</h3></p><p><pre><code class="language-mermaid">flowchart TD
-    subgraph 创建阶段
-        A[new AgentSession] --> B[订阅 Agent 事件<br/>_unsubscribeAgent = agent.subscribe]
-        B --> C[构建工具定义<br/>_buildRuntime]
-        C --> D[初始化扩展<br/>ExtensionRunner]
-    end</p><p>    subgraph 运行循环
-        E[prompt / steer / followUp] --> F{流式模式?}
-        F -->|是| G[队列消息]
-        F -->|否| H[验证模型 + API Key]
-        H --> I[构建 messages 数组]
-        I --> J[_runAgentPrompt]
-        J --> K{工具调用?}
-        K -->|是| L[执行工具]
-        L --> M[回喂 tool_result]
-        M --> J
-        K -->|否| N{停止原因}
-        N -->|retry| J
-        N -->|compaction| O[触发上下文压缩]
-        N -->|end_turn| P[返回]
-    end</p><p>    subgraph 持久化
-        Q[message_end 事件] --> R[sessionManager.appendMessage]
-        Q --> S[持久化到 JSONL]
-    end</p><p>    subgraph 清理
-        T[dispose] --> U[ExtensionRunner.invalidate]
-        U --> V[cleanupSessionResources]
-    end
-</code></pre></p><p><h3>1.2.4 事件订阅机制</h3></p><p><code>AgentSession</code> 使用<strong>代理模式</strong>：在内部订阅 <code>Agent</code> 的事件（<code>_handleAgentEvent</code>），再转发给外部监听器：</p><p><pre><code class="language-typescript">// agent-session.ts（第 120-160 行）
-private _handleAgentEvent = async (event: AgentEvent): Promise<void> => {
-    // 1. 扩展事件优先
-    await this._emitExtensionEvent(event)</p><p>    // 2. 转发给外部监听器
-    this._emit(event.type === 'agent_end'
-        ? { ...event, willRetry: this._willRetryAfterAgentEnd(event) }
-        : event)</p><p>    // 3. 处理会话持久化
-    if (event.type === 'message_end') {
-        if (event.message.role === 'custom') {
-            // 自定义消息 -> CustomMessageEntry
-            this.sessionManager.appendCustomMessageEntry(...)
-        } else if (/<em> user/assistant/toolResult </em>/) {
-            // 普通消息 -> SessionMessageEntry
-            this.sessionManager.appendMessage(event.message)
-        }
-    }
-}
-</code></pre></p><p>---</p><p><h2>1.3 工具系统（Tools）</h2></p><p><h3>1.3.1 工具工厂模式</h3></p><p>pi 用<strong>工厂模式</strong>统一创建 7 种内置工具：</p><p><pre><code class="language-typescript">// core/tools/index.ts
-export type ToolName = 'read' | 'bash' | 'edit' | 'write' | 'grep' | 'find' | 'ls'</p><p>export function createToolDefinition(
-    toolName: ToolName,
-    cwd: string,
-    options?: ToolsOptions
-): ToolDef {
-    switch (toolName) {
-        case 'read':  return createReadToolDefinition(cwd, options?.read)
-        case 'bash':  return createBashToolDefinition(cwd, options?.bash)
-        case 'edit':  return createEditToolDefinition(cwd, options?.edit)
-        case 'write': return createWriteToolDefinition(cwd, options?.write)
-        case 'grep':  return createGrepToolDefinition(cwd, options?.grep)
-        case 'find':  return createFindToolDefinition(cwd, options?.find)
-        case 'ls':    return createLsToolDefinition(cwd, options?.ls)
-    }
-}
-</code></pre></p><p><h3>1.3.2 工具分类</h3></p><p><table><thead><tr><th>工具</th><th>分类</th><th>读/写</th><th>说明</th></tr></thead><tbody><tr><td><code>read</code></td><td>只读</td><td>R</td><td>文件读取，支持 offset/limit</td></tr><tr><td><code>grep</code></td><td>只读</td><td>R</td><td>内容搜索（rg 封装）</td></tr><tr><td><code>find</code></td><td>只读</td><td>R</td><td>文件查找</td></tr><tr><td><code>ls</code></td><td>只读</td><td>R</td><td>目录列表</td></tr><tr><td><code>bash</code></td><td>混合</td><td>R/W</td><td>命令执行</td></tr><tr><td><code>edit</code></td><td>写入</td><td>W</td><td>精准编辑（diff patch）</td></tr><tr><td><code>write</code></td><td>写入</td><td>W</td><td>完整覆盖写入</td></tr></tbody></table>
-<h3>1.3.3 工具 → Agent 的桥接</h3></p><p><pre><code class="language-typescript">// core/tools/tool-definition-wrapper.ts
-export function createToolDefinitionFromAgentTool(
-    tool: AgentTool<any>,
-    name: string
-): ToolDefinition { ... }</p><p>// AgentSession._installAgentToolHooks() 把工具 hooks 安装到 Agent
-this.agent.beforeToolCall = async ({ toolCall, args }) => {
-    return await this._extensionRunner.emitToolCall({ type: 'tool_call', ... })
-}
-this.agent.afterToolCall = async ({ toolCall, args, result, isError }) => {
-    return await this._extensionRunner.emitToolResult({ type: 'tool_result', ... })
-}
-</code></pre></p><p>---</p><p><h2>1.4 扩展系统（Extensions）</h2></p><p><h3>1.4.1 扩展架构分层</h3></p><p><pre><code class="language-">Extension（用户写的 .ts 文件）
-        ↓ 工厂函数
-ExtensionFactory
-        ↓ jiti 动态加载
-ExtensionRunner（生命周期管理）
-        ↓ 事件分发
-各个 Handler（事件处理函数）
-</code></pre></p><p><h3>1.4.2 ExtensionRunner 核心方法</h3></p><p><pre><code class="language-typescript">// core/extensions/runner.ts
-export class ExtensionRunner {
-    // 生命周期绑定
-    bindCore(actions, contextActions, providerActions): void
-    bindCommandContext(actions?): void
-    setUIContext(uiContext?): void</p><p>    // 事件发射
-    emit(event): Promise<RunnerEmitResult>        // 普通事件
-    emitMessageEnd(event): Promise<AgentMessage>  // message_end（可替换消息）
-    emitToolCall(event): Promise<ToolCallEventResult>  // 工具调用拦截
-    emitToolResult(event): Promise<ToolResultEventResult> // 工具结果拦截
-    emitContext(messages): Promise<AgentMessage[]>  // 上下文拦截
-    emitBeforeAgentStart(...): Promise<BeforeAgentStartCombinedResult></p><p>    // 工具和命令查询
-    getAllRegisteredTools(): RegisteredTool[]
-    getToolDefinition(name): ToolDefinition | undefined
-    getRegisteredCommands(): ResolvedCommand[]
-    getCommand(name): ResolvedCommand | undefined
-}
-</code></pre></p><p><h3>1.4.3 事件体系</h3></p><p>pi 的扩展系统通过<strong>事件总线</strong>连接 Agent 生命周期和扩展 Handler：</p><p><pre><code class="language-mermaid">flowchart LR
-    subgraph AgentCore 事件
-        A1[agent_start] --> A2[turn_start]
-        A2 --> A3[message_start]
-        A3 --> A4[tool_execution_start]
-        A4 --> A5[message_end]
-        A5 --> A6[turn_end]
-        A6 --> A7[agent_end]
-    end</p><p>    subgraph Extension 事件
-        E1[before_agent_start] --> E2[input]
-        E2 --> E3[context]
-        E3 --> E4[tool_call]
-        E4 --> E5[tool_result]
-        E5 --> E6[message_end]
-        E6 --> E7[before_provider_request]
-    end
-</code></pre></p><p>---</p><p><h2>1.5 上下文与压缩（Compaction）</h2></p><p><h3>1.5.1 为什么需要压缩</h3></p><p>Code Agent 的会话会越来越长。超过模型的 context window 后，必须<strong>压缩历史消息</strong>而不是丢弃。</p><p><h3>1.5.2 压缩管道</h3></p><p><pre><code class="language-mermaid">flowchart TD
-    A[消息序列] --> B{shouldCompact?}
-    B -->|否| Z[继续]
-    B -->|是| C[findCutPoint]
-    C --> D[提取消息]
-    D --> E[generateSummary]
-    E --> F[CompactionSummary 消息]
-    F --> G[sessionManager 持久化]
-    G --> H[重新加载 session]
-</code></pre></p><p>关键函数：<code>prepareCompaction()</code> → <code>compact()</code> → 结果存入 <code>CompactionEntry</code>。</p><p><h3>1.5.3 分支摘要（Branch Summarization）</h3></p><p>树形会话结构中，导航到其他分支时，当前分支需要被摘要以便后续返回：</p><p><pre><code class="language-typescript">// compaction/branch-summarization.ts
-export async function generateBranchSummary(
-    entries: SessionEntry[],
-    options: GenerateBranchSummaryOptions,
-): Promise<BranchSummaryResult>
-</code></pre></p><p>---</p><p><h2>1.6 会话持久化（Session Manager）</h2></p><p><h3>1.6.1 Session 树结构</h3></p><p><pre><code class="language-mermaid">graph TD
-    A((root)) --> B((会话 A))
-    A --> C((会话 B))
-    B --> D((分支 B1))
-    B --> E((分支 B2))
-    D --> F((分支 B1-1))
-    C --> G((分支 C1))
-</code></pre></p><p>每个 <code>SessionEntry</code> 有 <code>id</code> + <code>parentId</code>，构成树形结构。存储格式为<strong>追加写入的 JSONL</strong>。</p><p><h3>1.6.2 SessionEntry 类型</h3></p><p><pre><code class="language-typescript">// session-manager.ts
-export type SessionEntry =
-    | SessionMessageEntry      // 消息
-    | ThinkingLevelChangeEntry // 思考级别变更
-    | ModelChangeEntry         // 模型变更
-    | CompactionEntry          // 压缩记录
-    | BranchSummaryEntry       // 分支摘要
-    | CustomEntry             // 扩展自定义数据
-    | CustomMessageEntry       // 扩展注入消息（进 LLM 上下文）
-    | LabelEntry              // 标签/书签
-    | SessionInfoEntry         // 会话元信息
-</code></pre></p><p>---</p><p><h2>1.7 System Prompt 与 Skills</h2></p><p><h3>1.7.1 buildSystemPrompt 的组装顺序</h3></p><p><pre><code class="language-mermaid">flowchart LR
-    A[customPrompt?] --> B{是}
-    B -->|是| C[直接使用 customPrompt]
-    B -->|否| D[构建默认 prompt]
-    D --> E[工具列表]
-    E --> F[Guidelines]
-    F --> G[Pi 文档路径]
-    G --> H[appendSystemPrompt]
-    H --> I[contextFiles]
-    I --> J[skills]
-    J --> K[date + cwd]
-</code></pre></p><p><h3>1.7.2 Skills 的加载链路</h3></p><p><pre><code class="language-typescript">// skills.ts: loadSkills()
-loadSkills() → loadSkillsFromDir() → loadSkillFromFile()
-                                    → 验证 frontmatter
-                                    → 解析 name/description
-                                    → 返回 Skill[]
-formatSkillsForPrompt() → 格式化为 <available_skills> XML 块
-</code></pre></p><p>---</p><p><h2>1.8 多层配置系统</h2></p><p>pi 的配置来自多个层级，按优先级（高到低）合并：</p><p><pre><code class="language-mermaid">flowchart TD
-    A[环境变量] --> B[命令行参数]
-    B --> C[settings.jsonl<br/>项目级]
-    C --> D[settings.jsonl<br/>用户级]
-    D --> E[默认值]
-</code></pre></p><p>---</p><p><h2>1.9 整体数据流</h2></p><p><pre><code class="language-mermaid">sequenceDiagram
-    participant User
-    participant Mode as Mode (TUI/RPC/Print)
-    participant Session as AgentSession
-    participant Agent as Agent Core
-    participant ExtRunner as ExtensionRunner
-    participant Tools as Tool Registry
-    participant Compaction as Compaction
-    participant SessionMgr as SessionManager
-    participant LLM as Model API</p><p>    User->>Mode: 输入文本
-    Mode->>Session: prompt(text)
-    Session->>ExtRunner: emitInput()
-    ExtRunner-->>Session: transformed text
-    Session->>Session: _expandSkillCommand
-    Session->>Agent: agent.prompt(messages)</p><p>    loop Agent Loop
-        Agent->>LLM: messages + tools
-        LLM-->>Agent: stop_reason=tool_use
-        Agent->>Tools: execute tool
-        Tools-->>Agent: tool result
-        Agent->>ExtRunner: emitToolCall / emitToolResult
-        Agent->>Session: message_end event
-        Session->>SessionMgr: appendMessage
-    end</p><p>    Agent-->>Session: agent_end
-    Session->>Compaction: 检查是否需要压缩
-    Compaction-->>Session: CompactionResult
-    Session->>SessionMgr: 持久化
-</code></pre></p><p>---</p><p><h2>1.10 关键设计原则</h2></p><p><table><thead><tr><th>原则</th><th>体现</th></tr></thead><tbody><tr><td><strong>单一职责</strong></td><td>每个模块只做一件事（tools/ 只管工具，compaction/ 只管压缩）</td></tr><tr><td><strong>工厂模式</strong></td><td><code>createToolDefinition()</code> 统一工具创建</td></tr><tr><td><strong>事件驱动</strong></td><td>Agent Core → AgentSession → ExtensionRunner 事件层层转发</td></tr><tr><td><strong>扩展优先</strong></td><td>核心路径都留了扩展钩子（before_agent_start, tool_call, tool_result 等）</td></tr><tr><td><strong>可恢复</strong></td><td>JSONL 追加写入，crash-safe，支持 branch/session 切换</td></tr></tbody></table>
----</p><p><h2>1.11 后续章节预告</h2></p><p><table><thead><tr><th>章节</th><th>主题</th><th>核心源码</th></tr></thead><tbody><tr><td>第2章</td><td>Agent Loop</td><td><code>packages/agent/src/agent-loop.ts</code></td></tr><tr><td>第3章</td><td>Tools 系统</td><td><code>core/tools/index.ts</code> 及各工具文件</td></tr><tr><td>第5章</td><td>System Prompt</td><td><code>core/system-prompt.ts</code></td></tr><tr><td>第7章</td><td>Context Engineering</td><td><code>core/compaction/</code> + <code>core/messages.ts</code></td></tr><tr><td>第10章</td><td>Extension System</td><td><code>core/extensions/runner.ts</code> + <code>loader.ts</code></td></tr><tr><td>第14章</td><td>Skills 系统</td><td><code>core/skills.ts</code></td></tr><tr><td>第15章</td><td>会话持久化</td><td><code>core/session-manager.ts</code></td></tr></tbody></table>
----</p><p>> <strong>下一步阅读</strong>：<a href="./chapter-02-agent-loop.md">第2章 Agent Loop</a> — 理解 Agent 如何用 AsyncGenerator 暴露状态机事件。
+<p><h1>第1章 架构总览：pi 是小内核加扩展生态</h1></p><p><h2>1.1 pi 解决什么系统问题</h2></p><p>pi 是 terminal coding harness。它的目标不是做 IDE，也不是托管 agent 平台，而是在本地项目目录里提供一个可扩展、可恢复、可脚本化的 coding agent 运行时。用户可以安装、登录 provider、选择模型、引用文件、运行 shell、让模型读写代码、恢复 session、导出记录，并通过 extensions、skills、prompt templates、themes、packages、SDK、RPC 和 JSON mode 扩展它。</p><p>官方文档的中心判断是“小核心，复杂工作流通过扩展生态完成”。这意味着 pi 刻意不把 MCP、sub-agent、permission popup、plan mode、todo、background bash 做进核心。复刻 pi 时，第一件事不是复制某个 UI，而是复制这种边界：核心提供稳定协议和运行时，产品能力通过资源和扩展增长。</p><p><h2>1.2 四层架构</h2></p><p><table><thead><tr><th>层</th><th>包</th><th>责任</th></tr></thead><tbody><tr><td>Provider 层</td><td><code>packages/ai</code></td><td>模型注册、API 适配、OAuth/API key、流式事件、usage/cost</td></tr><tr><td>Agent Core</td><td><code>packages/agent</code></td><td>agent loop、工具闭环、基础 <code>Agent</code>、可嵌入 <code>AgentHarness</code></td></tr><tr><td>Product Harness</td><td><code>packages/coding-agent</code></td><td>CLI/TUI/RPC/JSON、内置工具、session、settings、extensions、resources</td></tr><tr><td>Terminal UI</td><td><code>packages/tui</code> 与 coding-agent modes</td><td>编辑器、渲染、键盘、overlay、自定义组件</td></tr></tbody></table>
+低层 loop 从 <a href="/source-code/packages/agent/src/agent-loop.ts#L31">agent-loop.ts#L31</a> 开始；<code>Agent</code> 状态封装从 <a href="/source-code/packages/agent/src/agent.ts#L166">agent.ts#L166</a> 开始；产品级 <code>AgentSession</code> 从 <a href="/source-code/packages/coding-agent/src/core/agent-session.ts#L252">agent-session.ts#L252</a> 开始；可嵌入 harness 从 <a href="/source-code/packages/agent/src/harness/agent-harness.ts#L164">agent-harness.ts#L164</a> 开始。</p><p><pre><code class="language-mermaid">flowchart TB
+  Mode[TUI / Print / RPC / JSON / SDK] --> Session[AgentSession]
+  Session --> Agent[Agent]
+  Session --> Extensions[ExtensionRunner]
+  Session --> Resources[ResourceLoader]
+  Session --> Store[SessionManager]
+  Agent --> Loop[agentLoop]
+  Loop --> AI[pi-ai streamSimple]
+  Loop --> Tools[AgentTool]
+  Extensions --> Resources
+  Extensions --> Tools
+</code></pre></p><p><h2>1.3 用户视角的完整链路</h2></p><p>用户在项目目录运行 <code>pi</code>。启动时，pi 读取 settings、auth、models、context files、extensions、skills、prompt templates、themes 和 packages。进入 interactive mode 后，用户在编辑器输入任务，可以通过 <code>@file</code> 引用文件、粘贴图片、用 <code>!command</code> 或 <code>!!command</code> 运行 shell、用 slash command 切模型或管理 session。</p><p>一次普通 prompt 的路径是：</p><p>1. mode 层收集文本、图片、文件引用和输入来源。
+2. <code>AgentSession.prompt()</code> 处理 slash command、input extension、prompt template 和 skill 展开，入口见 <a href="/source-code/packages/coding-agent/src/core/agent-session.ts#L962">agent-session.ts#L962</a>。
+3. <code>_runAgentPrompt()</code> 调用低层 <code>Agent.prompt()</code>，见 <a href="/source-code/packages/coding-agent/src/core/agent-session.ts#L918">agent-session.ts#L918</a>。
+4. <code>agentLoop()</code> 调 provider、执行工具、产生事件。
+5. <code>AgentSession._handleAgentEvent()</code> 消费事件，负责 session 写入、UI 广播、扩展事件、自动压缩和重试判断，入口见 <a href="/source-code/packages/coding-agent/src/core/agent-session.ts#L469">agent-session.ts#L469</a>。
+6. session 以 JSONL 树追加保存，用户可以继续、恢复、分叉、导出。</p><p>这个链路解释了为什么 pi 不是“CLI 包了一层模型 API”。它是一个多消费者事件系统：同一套事件同时驱动 UI、持久化、扩展、RPC 和测试。</p><p><h2>1.4 核心设计不变量</h2></p><p>pi 的设计可以压缩成七个不变量：</p><p>1. provider 差异只能在 provider 层收敛，不能泄漏进 agent loop。
+2. 模型看到的消息由转换边界决定，不能等同于 UI 或 session 消息。
+3. 工具是显式注册、可校验、可观察、可拦截的能力。
+4. session 是 append-only JSONL 树，不能退化成线性聊天数组。
+5. 扩展是产品能力增长接口，不是核心 loop 的补丁。
+6. runtime 配置变化要在安全点生效，不能修改正在进行的 provider 请求。
+7. 所有关键过程要能被事件观察，才能支持 TUI、RPC、eval 和调试。</p><p><h2>1.5 自定义 harness 的架构位置</h2></p><p><code>AgentHarness</code> 是给“我想复用 pi 的低层能力，但做自己的产品外壳”的开发者准备的。它不等同于 <code>AgentSession</code>。<code>AgentSession</code> 是 pi CLI 产品；<code>AgentHarness</code> 是更通用的嵌入层，负责 turn snapshot、save point、pending session writes、queue、tools、resources、model、compaction、tree navigation 等。</p><p>如果你要做 Web UI、团队内部 agent、IDE 插件、远程执行平台，应该学习 <code>AgentSession</code> 如何产品化，再判断哪些能力通过 <code>AgentHarness</code> 复用，哪些能力自己实现。第22章和第23章会把这个迁移路径整理成检查表。</p><p><h2>1.6 常见误解</h2></p><p>误解一：pi 的核心能力等于内置工具。实际核心是 loop、事件、session、资源和扩展边界；工具只是其中一种能力。</p><p>误解二：所有高级功能都应该做进核心。pi 的策略相反。权限门、计划模式、todo、MCP、sub-agent、远程执行都可以由 extension 或 package 提供。</p><p>误解三：RPC/SDK 是附加功能。对复刻者来说，RPC/SDK 是验证 harness 设计是否干净的方式。如果只能在 TUI 中工作，说明业务逻辑和界面耦合过深。
 </p>
 </body>
 </html>

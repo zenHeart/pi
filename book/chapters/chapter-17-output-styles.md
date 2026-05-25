@@ -1,203 +1,62 @@
-# 第17章 Output Styles：可插拔的输出格式化
+# 第17章 输出风格、TUI 与渲染扩展
 
-> **本章目标**：理解 pi 的 Output Guard 系统——如何通过 frontmatter 控制输出的格式、语气、安全检查。
->
-> **pi 源码对照**：
-> - `packages/coding-agent/src/core/output-guard.ts` — Output Guard 实现
-> - `packages/coding-agent/src/utils/frontmatter.ts` — frontmatter 解析
->
-> **本章结束能做什么**：能定义自定义 Output Style，配置输出格式和安全策略。
-> **前置阅读**：第1章（架构总览）。
+## 17.1 先校准事实
 
----
+pi 核心没有 Claude Code 式 “Output Styles” 内置系统。pi 的输出定制来自三层：system prompt 改变模型表达，message/tool renderer 改变展示结构，theme 改变颜色样式。三者不能混用。
 
-## 1. Output Styles 解决的问题
+如果你想让模型回答更简洁，用 system prompt 或 APPEND_SYSTEM。想让某类 tool result 显示成表格，用 renderer。想让界面变亮色，用 theme。
 
-Code Agent 的输出面向不同场景需要不同格式：
+## 17.2 Interactive Mode 是产品外壳
 
-- **代码审查**：需要 diff 视图、注释高亮
-- **日志记录**：需要时间戳、分类标签
-- **用户展示**：需要友好的格式、进度条
-- **安全审查**：需要过滤敏感信息、警告标记
+interactive mode 负责终端 UI 和用户交互，它委托业务逻辑给 `AgentSession`。文件开头注释就说明它处理 TUI rendering 和 interaction，见 [interactive-mode.ts#L3](/source-code/packages/coding-agent/src/modes/interactive/interactive-mode.ts#L3)。它导入 editor、message components、tool execution、settings selector、tree selector、model selector、footer 等组件。
 
-**Output Styles 的本质**：用 frontmatter 配置输出格式规则，Agent 自动应用。
+这对前端工程师很重要：pi 的 TUI 可以按组件系统理解。消息列表、footer、editor、overlay、selector、tool execution 都是视图层；agent loop 和 session 不应该写在组件里。
 
----
+TUI 组件协议在 [tui.ts#L39](/source-code/packages/tui/src/tui.ts#L39) 定义：组件至少能 `render(width)`，可选 `handleInput(data)`，可声明 `wantsKeyRelease`，也可实现 `invalidate()`。这和浏览器组件不同：终端 UI 没有 DOM diff，组件返回的是带 ANSI 样式的文本行；宽度是布局约束；输入是原始 terminal data。
 
-## 2. frontmatter 配置格式
+TUI 根节点处理输入和 focus，见 [tui.ts#L544](/source-code/packages/tui/src/tui.ts#L544)。当 focused component 存在时，它会接收输入；key release 是否传递由 `wantsKeyRelease` 控制，见 [tui.ts#L589](/source-code/packages/tui/src/tui.ts#L589)。overlay 渲染和裁剪在 [tui.ts#L776](/source-code/packages/tui/src/tui.ts#L776) 附近。这解释了 docs/tui.md 里为什么强调 overlay、focus、IME 和 line width：终端 UI 的正确性来自组件协议，而不是 React/Vue 那种浏览器事件模型。
 
-```markdown
----
-name: code-review
-description: Output format for code review feedback
-output:
-  format: diff
-  show-line-numbers: true
-  max-delta: 50
-security:
-  filter-secrets: true
-  redact-api-keys: true
----
-```
+## 17.3 Tool 和 custom message 渲染
 
----
+工具渲染由 `ToolExecutionComponent` 处理，它会优先使用工具定义提供的 `renderCall` / `renderResult`，相关逻辑从 [tool-execution.ts#L81](/source-code/packages/coding-agent/src/modes/interactive/components/tool-execution.ts#L81) 开始。没有 renderer 时走 fallback。
 
-## 3. Output Guard 架构
+扩展可以注册 custom message renderer，API 在 [types.ts#L1171](/source-code/packages/coding-agent/src/core/extensions/types.ts#L1171)。这让扩展可以把结构化数据展示成专门 UI，但 session 中仍保留结构化 entry。
 
-```typescript
-// core/output-guard.ts
-export class OutputGuard {
-    constructor(private config: OutputStyleConfig) {}
+扩展 UI API 从 [types.ts#L124](/source-code/packages/coding-agent/src/core/extensions/types.ts#L124) 开始，覆盖 select、confirm、input、notify、status、widget、footer/header、custom overlay、pasteToEditor、setEditorText、editor、autocomplete、custom editor、theme、tool expansion。`setWidget()` 在 [types.ts#L163](/source-code/packages/coding-agent/src/core/extensions/types.ts#L163)，custom editor 在 [types.ts#L253](/source-code/packages/coding-agent/src/core/extensions/types.ts#L253)。这让 extension 可以参与产品 UI，但不会越过 `AgentSession` 直接改 agent loop。
 
-    process(output: string): ProcessedOutput {
-        let result = output
+复刻时需要坚持两条边界：
 
-        if (this.config.output?.filterSecrets) {
-            result = this.filterSecrets(result)
-        }
+- 渲染器可以改变展示，不应改变 session entry。
+- extension UI 可以请求用户输入，不应阻塞 provider stream 读取或破坏 abort。
 
-        if (this.config.output?.redactApiKeys) {
-            result = this.redactApiKeys(result)
-        }
+## 17.4 Themes 与 Markdown
 
-        return {
-            content: result,
-            warnings: this.warnings,
-            metadata: this.metadata,
-        }
-    }
-}
-```
+`Theme` 类从 [theme.ts#L322](/source-code/packages/coding-agent/src/modes/interactive/theme/theme.ts#L322) 开始，Markdown theme 生成从 [theme.ts#L1163](/source-code/packages/coding-agent/src/modes/interactive/theme/theme.ts#L1163) 开始。themes 文档列出颜色 token；代码中会验证主题是否包含必需颜色，相关校验从 [theme.ts#L524](/source-code/packages/coding-agent/src/modes/interactive/theme/theme.ts#L524) 附近开始。
 
----
+主题只影响显示，不改变 agent 行为。HTML export 也可以使用 theme export colors，但它不应该改变 session 数据。
 
-## 4. 内置样式
+## 17.5 Keybindings 与输入
 
-pi 内置几种输出样式：
+pi 的快捷键可配置，keybindings 管理器在 [keybindings.ts#L333](/source-code/packages/coding-agent/src/core/keybindings.ts#L333) 附近读取 JSON 配置。终端按键不是浏览器 keyboard event；不同 terminal 对 Shift+Enter、Ctrl+Enter、Alt+Enter 的支持不同，因此 docs 有 terminal-setup、tmux、windows、termux 专门说明。
 
-| 样式 | 用途 | 关键配置 |
-|------|------|----------|
-| `default` | 通用输出 | 无特殊过滤 |
-| `code-review` | diff 视图 | show-line-numbers, max-delta |
-| `minimal` | 最小输出 | strip-comments, compact-format |
-| `verbose` | 详细日志 | include-timestamps, include-stack-traces |
+复刻 TUI 时要把输入层当成平台兼容问题，而不是简单 readline。
 
----
+## 17.6 TUI 组件设计清单
 
-## 5. 与 System Prompt 的关系
+docs/tui.md 对“能写 extension UI”的要求可以落成这份清单：
 
-Output Style 不是 system prompt 的一部分，而是**输出后处理**：
+- render 必须只根据当前状态和 width 输出文本行，不能在 render 中发起副作用。
+- handleInput 只处理当前焦点组件的输入，必要时调用 done/cancel 关闭 overlay。
+- invalidate 用来通知 TUI 重绘，不直接写 stdout。
+- overlay 要声明尺寸和位置，避免覆盖 editor/footer。
+- SelectList、SettingsList、BorderedLoader、Markdown、Input、Editor 是可复用基础组件，优先组合，不要重新造一套菜单。
+- 自定义 editor 应继承或兼容默认 editor 的 app-level keybindings，否则 Escape、Ctrl+D、模型切换等全局动作会失效。
+- IME、paste、多行输入、图片显示、terminal progress 都应在输入/显示层处理，不应污染 session。
 
-```mermaid
-flowchart LR
-    A[LLM 输出] --> B[Output Guard]
-    B --> C{应用哪个 Style?}
-    C -->|code-review| D[diff 格式化]
-    C -->|minimal| E[精简输出]
-    C -->|default| F[直接输出]
-    D --> G[最终输出]
-    E --> G
-    F --> G
-```
+前端工程师可以把它理解成“没有 DOM 的组件系统”：state 在组件实例里，layout 由 `render(width)` 返回，交互由 focus + raw input 驱动。
 
----
+## 17.7 复刻原则
 
-## 6. 安全过滤
+MVP：print mode 或简单 TUI；消息渲染、工具状态、footer、basic shortcuts。
 
-### 6.1 敏感信息过滤
-
-```typescript
-// core/output-guard.ts
-private filterSecrets(text: string): string {
-    // 过滤 API Keys
-    text = text.replace(/sk-[a-zA-Z0-9]{32,}/g, '[REDACTED_API_KEY]')
-
-    // 过滤 Bearer Tokens
-    text = text.replace(/Bearer\s+[a-zA-Z0-9\-_]+\.[a-zA-Z0-9\-_]+\.[a-zA-Z0-9\-_]+/g, '[REDACTED_TOKEN]')
-
-    // 过滤私钥
-    text = text.replace(/-----BEGIN\s+(RSA|DSA|EC|OPENSSH)\s+PRIVATE KEY-----/g, '[REDACTED_PRIVATE_KEY]')
-
-    return text
-}
-```
-
-### 6.2 警告注入
-
-当检测到敏感信息被过滤时，自动注入警告：
-
-```typescript
-if (this.filteredCount > 0) {
-    this.warnings.push({
-        type: 'sensitive-data-filtered',
-        count: this.filteredCount,
-        suggestion: 'Use environment variables for secrets'
-    })
-}
-```
-
----
-
-## 7. 自定义 Output Style
-
-### 7.1 定义新的 Style
-
-在 `~/.pi/styles/` 或项目 `.pi/styles/` 中添加 Markdown 文件：
-
-```markdown
----
-name: my-project-style
-description: Custom output format for my project
-output:
-  format: custom
-  prefix: "[my-project] "
-  timestamp: true
-security:
-  filter-secrets: true
----
-
-# Custom Output Style
-
-This style is used for my project's specific requirements.
-```
-
-### 7.2 加载链路
-
-```typescript
-// core/output-guard.ts: loadStyles()
-export function loadStyles(stylesDir: string): OutputStyle[] {
-    const files = readdirSync(stylesDir).filter(f => f.endsWith('.md'))
-
-    return files.map(file => {
-        const content = readFileSync(join(stylesDir, file), 'utf-8')
-        const { frontmatter } = parseFrontmatter(content)
-        return {
-            name: frontmatter.name || basename(file, '.md'),
-            description: frontmatter.description,
-            config: frontmatter,
-        }
-    })
-}
-```
-
----
-
-## 8. 样式优先级
-
-当多个样式匹配时，按以下优先级应用：
-
-1. **命令行指定**：`--style code-review`
-2. **项目配置**：`.pi/config.yaml` 中的 `output.style`
-3. **会话默认值**：`default` 样式
-
----
-
-## 9. 实践要点
-
-1. **不要在 prompt 里硬编码格式**——用 Output Style 分离关注点
-2. **敏感过滤要保守**——宁可多过滤也不要漏
-3. **警告要可操作**——给出修复建议而不仅仅是"发现敏感信息"
-
----
-
-> **下一步阅读**：[第18章 Eval 与可观测性](./chapter-18-eval-and-observability.md) — 理解 pi 的评测体系。
+生产级：component system、overlay、selectors、custom extension UI、custom editor、theme tokens、keybinding config、image display、terminal compatibility、HTML export renderer。

@@ -16,117 +16,13 @@
   </style>
 </head>
 <body>
-<p><h1>第11章 记忆系统</h1></p><p>> <strong>本章目标</strong>：解释项目指令、用户记忆和会话上下文如何长期影响 Agent。
-> <strong>pi 源码对照</strong>：
-> - <code>packages/agent/src/harness/session/memory-repo.ts</code> — 记忆仓库
-> - <code>packages/agent/src/harness/session/memory-storage.ts</code> — 记忆存储
-> - <code>packages/coding-agent/src/core/resource-loader.ts</code> — 资源加载
->
-> <strong>本章结束能做什么</strong>：能设计文件系统优先的记忆加载、提取、更新机制。
-> <strong>阅读时间</strong>：约 30 分钟。</p><p>---</p><p><h2>1. 三层个性化体系</h2></p><p><h3>1.1 三层对比</h3></p><p><table><thead><tr><th>层</th><th>存储位置</th><th>生命周期</th><th>写入者</th><th>用途</th></tr></thead><tbody><tr><td><strong>CLAUDE.md</strong></td><td>项目文件系统</td><td>随代码版本控制</td><td>团队成员提交</td><td>架构约定、代码规范</td></tr><tr><td><strong>记忆系统</strong></td><td><code>~/.claude/projects/<slug>/memory/</code></td><td>跨会话持久</td><td>模型自动提取</td><td>用户偏好、反馈校正</td></tr><tr><td><strong>输出风格</strong></td><td>配置层</td><td>按需加载</td><td>当前对话</td><td>回复风格</td></tr></tbody></table>
-<h3>1.2 CLAUDE.md 层级</h3></p><p><pre><code class="language-">项目根/
-├── CLAUDE.md                    # 项目级
-└── .claude/
-    ├── CLAUDE.md               # 项目配置
-    ├── rules/
-    │   └── <em>.md               # 条件规则
-    └── memory/                 # 记忆存储
-        ├── user-memory.md
-        └── project-memory.md
-</code></pre></p><p>---</p><p><h2>2. 记忆类型</h2></p><p><h3>2.1 记忆类型定义</h3></p><p><pre><code class="language-typescript">// packages/agent/src/harness/session/memory-storage.ts
-export type MemoryType =
-  | 'user_preference'   // 用户偏好
-  | 'feedback'          // 反馈校正
-  | 'project_context'   // 项目上下文
-  | 'reference'         // 外部指针</p><p>export interface MemoryEntry {
-  id: string
-  type: MemoryType
-  content: string
-  createdAt: Date
-  updatedAt: Date
-  source: 'extracted' | 'manual' | 'user_feedback'
-}
-</code></pre></p><p><h3>2.2 记忆提取</h3></p><p><pre><code class="language-typescript">// packages/agent/src/harness/session/memory-repo.ts
-export async function extractMemory(
-  messages: Message[],
-): Promise<MemoryEntry[]> {
-  // 从对话历史中提取记忆
-  const extractionPrompt = <code>
-从以下对话中提取关键的用户偏好和项目信息：</p><p>${messages.map(m => </code>${m.role}: ${m.content}<code>).join('\n')}</p><p>返回格式：
-<ul><li>用户偏好: ...</li>
-<li>项目上下文: ...</li>
-<li>反馈校正: ...</li>
-</ul></code></p><p>  const response = await callModel(extractionPrompt)
-  return parseMemoryEntries(response)
-}
-</code></pre></p><p>---</p><p><h2>3. 记忆加载</h2></p><p><h3>3.1 加载流程</h3></p><p><pre><code class="language-typescript">// packages/coding-agent/src/core/resource-loader.ts
-export async function loadMemoryForSession(
-  session: AgentSession,
-): Promise<string[]> {
-  const memoryFiles = await findMemoryFiles(session.projectRoot)
-  const memories: string[] = []</p><p>  for (const file of memoryFiles) {
-    const content = await readFile(file, 'utf-8')
-    const { data, content: body } = parseFrontmatter(content)</p><p>    // 检查是否适用当前会话
-    if (isApplicable(data, session)) {
-      memories.push(body)
-    }
-  }</p><p>  return memories
-}</p><p>function isApplicable(
-  frontmatter: Record<string, unknown>,
-  session: AgentSession,
-): boolean {
-  // 检查条件规则
-  const when = frontmatter.when as string | undefined
-  if (!when) return true</p><p>  return evaluateCondition(when, {
-    cwd: session.cwd,
-    projectRoot: session.projectRoot,
-    model: session.config.model,
-  })
-}
-</code></pre></p><p>---</p><p><h2>4. 记忆预取</h2></p><p><h3>4.1 首轮预取</h3></p><p><pre><code class="language-typescript">// packages/agent/src/harness/session/memory-storage.ts
-export class MemoryManager {
-  private cache: Map<string, MemoryEntry[]> = new Map()</p><p>  async prefetch(session: AgentSession): Promise<void> {
-    // 在第一轮循环前预取所有记忆
-    const memories = await this.loadAllMemories(session)
-    this.cache.set(session.id, memories)
-  }</p><p>  async getActiveMemories(session: AgentSession): Promise<string[]> {
-    const cached = this.cache.get(session.id)
-    if (cached) {
-      return cached.map(m => m.content)
-    }
-    return this.loadAllMemories(session)
-  }</p><p>  async updateMemory(
-    session: AgentSession,
-    entry: MemoryEntry,
-  ): Promise<void> {
-    await this.storage.save(entry)
-    // 更新缓存
-    const existing = this.cache.get(session.id) ?? []
-    const index = existing.findIndex(e => e.id === entry.id)
-    if (index >= 0) {
-      existing[index] = entry
-    } else {
-      existing.push(entry)
-    }
-    this.cache.set(session.id, existing)
-  }
-}
-</code></pre></p><p>---</p><p><h2>5. Team Memory</h2></p><p><h3>5.1 团队记忆共享</h3></p><p><pre><code class="language-typescript">// packages/agent/src/harness/session/memory-storage.ts
-export interface TeamMemory {
-  teamId: string
-  sharedMemories: MemoryEntry[]
-  memberMemories: Map<string, MemoryEntry[]>
-}</p><p>export async function loadTeamMemory(
-  teamId: string,
-): Promise<TeamMemory> {
-  const sharedDir = getTeamMemoryDir(teamId)
-  const sharedFiles = await glob(<code>${sharedDir}/shared/</em>.md</code>)</p><p>  const sharedMemories: MemoryEntry[] = []
-  for (const file of sharedFiles) {
-    const content = await readFile(file, 'utf-8')
-    sharedMemories.push(parseMemoryFile(content))
-  }</p><p>  return { teamId, sharedMemories, memberMemories: new Map() }
-}
-</code></pre></p><p>---</p><p>> <strong>下一步阅读</strong>：<a href="./chapter-12-session-resume.md">第12章 Session Resume</a> — 会话恢复。
+<p><h1>第11章 记忆系统：文件、资源与会话共同构成记忆</h1></p><p><h2>11.1 pi 的记忆不是一个数据库表</h2></p><p>pi 没有把“记忆”实现成单个 memory table。它的记忆来自多个层次：项目规则、用户配置、skills、prompt templates、session JSONL、compaction summary、branch summary、package 资源和工具输出。每一类记忆都有不同所有权和生命周期。</p><p>这个设计适合本地开发工具。规则和资源可以放进仓库，session 可以导出，skills 可以共享，packages 可以分发。复刻时不要过早引入向量库或数据库；先把可审计的文件系统记忆做好。</p><p><h2>11.2 Context files</h2></p><p><code>AGENTS.md</code> / <code>CLAUDE.md</code> 是项目记忆。<code>loadProjectContextFiles()</code> 从 <a href="/source-code/packages/coding-agent/src/core/resource-loader.ts#L75">resource-loader.ts#L75</a> 开始，它加载全局和项目路径上的 context files。它们进入 system prompt，告诉模型项目规则、测试命令、风格限制、协作约束。</p><p>这种记忆应该是稳定规则，不适合放临时任务状态。临时状态应该在 session；可复用流程应该在 skill；用户输入模板应该在 prompt template。</p><p><h2>11.3 Skills</h2></p><p>skills 是可复用能力说明。加载入口是 <a href="/source-code/packages/coding-agent/src/core/skills.ts#L387">skills.ts#L387</a>。一个 skill 通常是 <code>SKILL.md</code>，包含 frontmatter name/description 和正文指令。加载器会校验名称和 description，见 <a href="/source-code/packages/coding-agent/src/core/skills.ts#L92">skills.ts#L92</a> 和 <a href="/source-code/packages/coding-agent/src/core/skills.ts#L117">skills.ts#L117</a>。</p><p>可见 skills 会被格式化进 system prompt，格式化逻辑从 <a href="/source-code/packages/coding-agent/src/core/skills.ts#L335">skills.ts#L335</a> 开始。设置 <code>disable-model-invocation</code> 的 skill 不进入模型可选列表，只能显式 <code>/skill:name</code> 调用。这个机制让团队可以区分“模型可主动使用的技能”和“用户必须显式触发的流程”。</p><p><h2>11.4 Prompt templates 与 packages</h2></p><p>prompt templates 是用户输入模板，适合重复任务，如 code review、release note、bug triage。packages 是分发单元，可以贡献 extensions、skills、prompts、themes。资源加载器把 package manager 解析出的路径合并进资源加载过程，相关 reload 逻辑从 <a href="/source-code/packages/coding-agent/src/core/resource-loader.ts#L321">resource-loader.ts#L321</a> 开始。</p><p>复刻时要区分：</p><p><ul><li>skill：教模型如何做一类任务。</li>
+<li>prompt template：快速生成一条用户请求。</li>
+<li>extension：运行时代码和副作用。</li>
+<li>theme：视觉配置。</li>
+<li>package：分发上述资源。</li>
+</ul>
+<h2>11.5 Session 记忆</h2></p><p>session 保存过程记忆。它不仅保存 user/assistant/toolResult，还保存 model change、thinking level change、compaction、branch summary、custom entry、label、session info 等。<code>SessionEntry</code> 定义在 <a href="/source-code/packages/coding-agent/src/core/session-manager.ts#L138">session-manager.ts#L138</a>。</p><p>session 记忆用于 resume、tree、fork、clone、export、eval、RL 数据提取。不要把 session 只看成聊天记录，它是 agent 的工作日志和恢复边界。</p><p><h2>11.6 复刻原则</h2></p><p>MVP：context file、session JSONL、manual prompt snippets。</p><p>生产级：skills、prompt templates、packages、resource reload、source metadata、diagnostics、compaction/branch summaries、custom messages、resource enable/disable、project/global layering。
 </p>
 </body>
 </html>

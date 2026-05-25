@@ -1,452 +1,67 @@
-# 第15章 Skills 系统：Markdown 技能框架
+# 第15章 Skills、Prompt Templates、Themes 与 Packages
 
-> **本章目标**：深入理解 pi 的 Markdown 技能系统——如何用 frontmatter 定义技能、如何加载和验证、如何注入到 system prompt。
->
-> **pi 源码对照**：
-> - `packages/coding-agent/src/core/skills.ts` — 核心实现（约 500 行）
->
-> **本章结束能做什么**：能写出符合规范的 SKILL.md，理解 skill 的发现机制、冲突处理、frontmatter 验证，以及 `formatSkillsForPrompt` 的 XML 输出格式。
-> **前置阅读**：第1章（架构总览）。
+## 15.1 为什么资源要分层
 
----
+pi 的扩展生态不是“所有东西都是插件”。它把资源分成四类：skills、prompt templates、themes、extensions，再用 packages 分发。这样做的原因是不同资源的风险和生命周期不同：Markdown 指令不等于本地代码；输入模板不等于模型可主动调用的技能；视觉主题不应该影响 agent 行为。
 
-## 1. Skills 解决的问题
+资源加载器在 reload 时统一加载这些资源，核心流程从 [resource-loader.ts#L321](/source-code/packages/coding-agent/src/core/resource-loader.ts#L321) 开始。
 
-pi 是一个通用 Agent 框架，但用户在不同项目中有不同的技能需求：
+## 15.2 Skills
 
-- Web 开发团队需要 `react-dev` 技能
-- Python 团队需要 `poetry` 技能
-- 数据库团队需要 `sql-queries` 技能
+skills 是可复用任务知识。`loadSkills()` 从 [skills.ts#L387](/source-code/packages/coding-agent/src/core/skills.ts#L387) 开始，会加载用户目录、项目目录、显式路径和 package 贡献路径。每个 skill 通常是一个 `SKILL.md`，加载器会解析 frontmatter、校验 name/description、记录 sourceInfo。
 
-这些技能不应该硬编码在 pi 里，而应该**用户自己定义、按需加载、随项目复用**。
+模型可见的 skills 会通过 `formatSkillsForPrompt()` 放入 system prompt，入口见 [skills.ts#L335](/source-code/packages/coding-agent/src/core/skills.ts#L335)。用户也可以显式 `/skill:name` 调用。复刻时要保留这两个入口：模型自动发现和用户显式触发。
 
-**Skills 的本质**：把 Markdown 文件当作技能定义文件，用 frontmatter 声明元数据，文件内容作为技能指令。
+## 15.3 Prompt templates
 
----
+prompt templates 是用户输入模板，不是系统能力。它们适合重复任务：写 release note、做 code review、生成 issue comment。模板可以有参数提示，展开后变成用户消息进入 agent。
 
-## 2. SKILL.md 格式
+区别很关键：skill 教模型如何做，prompt template 帮用户快速说出要做什么。把模板做成 skill 会污染模型可选能力；把 skill 做成模板会失去模型按需调用的能力。
 
-### 2.1 最小完整示例
+源码里 prompt template 不是简单字符串替换。类型定义从 [prompt-templates.ts#L11](/source-code/packages/coding-agent/src/core/prompt-templates.ts#L11) 开始，加载入口在 [prompt-templates.ts#L194](/source-code/packages/coding-agent/src/core/prompt-templates.ts#L194)，展开入口在 [prompt-templates.ts#L269](/source-code/packages/coding-agent/src/core/prompt-templates.ts#L269)。loader 会解析 frontmatter、文件路径 sourceInfo、参数声明、命令名，并把 diagnostics 留给 UI 或日志。
 
-```markdown
----
-name: my-skill
-description: Build React components following team conventions
----
+`AgentSession` 会在处理用户输入时展开模板：普通输入里的模板由 [agent-session.ts#L1000](/source-code/packages/coding-agent/src/core/agent-session.ts#L1000) 附近处理；以 `/` 开头的资源命令也会进入同一套 expand 逻辑，避免“prompt 模板命令”和“普通模板引用”行为不一致。资源加载器合并 prompt paths 的逻辑在 [resource-loader.ts#L436](/source-code/packages/coding-agent/src/core/resource-loader.ts#L436)，去重逻辑在 [resource-loader.ts#L800](/source-code/packages/coding-agent/src/core/resource-loader.ts#L800)。
 
-# My Skill
+对前端工程师来说，可以把 prompt template 看成命令面板中的“可参数化输入片段”：
 
-这是技能的详细指令。当任务匹配 description 时，模型会读取这个文件。
+- name 决定命令名和补全。
+- description 决定 UI 提示。
+- arguments 决定参数提示和替换规则。
+- content 是最终追加到用户消息里的自然语言。
+- sourceInfo 决定它来自用户、项目、package 还是 CLI 显式路径。
 
-## 使用方法
+## 15.4 Themes 与渲染
 
-- 先运行 `npm install`
-- 然后执行构建
+themes 改变终端视觉，不改变模型行为。theme 系统从 [theme.ts#L322](/source-code/packages/coding-agent/src/modes/interactive/theme/theme.ts#L322) 的 `Theme` 类开始，加载 custom theme 的入口在 [theme.ts#L602](/source-code/packages/coding-agent/src/modes/interactive/theme/theme.ts#L602)。资源加载器也会加载 theme 路径，见 [resource-loader.ts#L552](/source-code/packages/coding-agent/src/core/resource-loader.ts#L552)。
 
-## 注意事项
+主题是产品体验的一部分，但不应承担安全、权限或 agent 行为逻辑。输出风格应通过 system prompt 或 renderer；颜色和布局才属于 theme。
 
-- 文件路径都相对于技能目录
-```
+## 15.5 Packages
 
-### 2.2 frontmatter 字段
+pi packages 是分发单元，可以来自 npm、git、本地路径，贡献 extensions、skills、prompts、themes。package manager 负责解析来源、安装、更新、启用/禁用资源。复刻时要把 package 当依赖代码处理：版本、来源、锁定、生命周期脚本、信任边界都要审计。
 
-```typescript
-// core/skills.ts
-export interface SkillFrontmatter {
-    name?: string           // 可选，默认用父目录名
-    description?: string    // ⭐ 必需，模型用来判断何时调用
-    'disable-model-invocation'?: boolean  // true = 只通过 /skill:name 调用
-    [key: string]: unknown  // 允许扩展
-}
-```
+团队场景中，packages 的价值是把工作流标准化：安全审批 extension、公司代码规范 skill、常用 prompt template、统一 theme 可以一起分发。
 
-### 2.3 name 验证规则
+package manager 的接口从 [package-manager.ts#L92](/source-code/packages/coding-agent/src/core/package-manager.ts#L92) 开始，默认实现从 [package-manager.ts#L757](/source-code/packages/coding-agent/src/core/package-manager.ts#L757) 开始。核心能力包括：
 
-```typescript
-// core/skills.ts: validateName()
-function validateName(name: string): string[] {
-    const errors = []
+- list：读取当前 settings 中配置的 packages，入口见 [package-manager.ts#L928](/source-code/packages/coding-agent/src/core/package-manager.ts#L928)。
+- install / installAndPersist：安装来源并写入 settings，入口见 [package-manager.ts#L956](/source-code/packages/coding-agent/src/core/package-manager.ts#L956) 和 [package-manager.ts#L979](/source-code/packages/coding-agent/src/core/package-manager.ts#L979)。
+- remove / removeAndPersist：移除安装与配置，入口见 [package-manager.ts#L984](/source-code/packages/coding-agent/src/core/package-manager.ts#L984) 和 [package-manager.ts#L1003](/source-code/packages/coding-agent/src/core/package-manager.ts#L1003)。
+- update：更新已安装来源，入口见 [package-manager.ts#L1008](/source-code/packages/coding-agent/src/core/package-manager.ts#L1008)。
+- dedupePackages：避免同一来源重复生效，入口见 [package-manager.ts#L1636](/source-code/packages/coding-agent/src/core/package-manager.ts#L1636)。
+- collectPackageResources：读取 package manifest 贡献的 extensions、skills、prompts、themes，入口见 [package-manager.ts#L1997](/source-code/packages/coding-agent/src/core/package-manager.ts#L1997)。
+- readPiManifest：解析 package 内的 pi manifest，入口见 [package-manager.ts#L2121](/source-code/packages/coding-agent/src/core/package-manager.ts#L2121)。
 
-    if (name.length > MAX_NAME_LENGTH)  // 64 chars
-        errors.push(`name exceeds ${MAX_NAME_LENGTH} characters`)
+这解释了 packages 文档为什么反复强调 manifest、source、scope 和 enable/disable。包不是“下载一个文件夹”，而是把资源路径贡献给资源加载器，并让 session reload 后形成新的可用能力。
 
-    if (!/^[a-z0-9-]+$/.test(name))  // 必须小写 + 数字 + 连字符
-        errors.push(`name contains invalid characters`)
+## 15.6 资源发现与优先级
 
-    if (name.startsWith('-') || name.endsWith('-'))
-        errors.push(`name must not start or end with a hyphen`)
+extension 还可以通过 `resources_discover` 动态贡献 skill/prompt/theme 路径。事件类型在 [types.ts#L495](/source-code/packages/coding-agent/src/core/extensions/types.ts#L495) 附近定义，handler 返回 `skillPaths`、`promptPaths`、`themePaths`。hooks 文档强调这不是普通 hook，而是资源注册阶段：多个 extension 的结果会聚合，随后由资源加载器统一加载和去重。
 
-    if (name.includes('--'))
-        errors.push(`name must not contain consecutive hyphens`)
+复刻时要明确资源优先级，否则会出现同名 skill 或 template 随机覆盖。一个合理顺序是：CLI 显式路径优先，项目级覆盖全局，package 提供默认能力，extension discover 只追加路径并保留 sourceInfo。冲突时要产出 diagnostics，不要静默吞掉。
 
-    return errors
-}
-```
+## 15.7 复刻原则
 
-> **设计意图**：`name` 会出现在 `/skill:name` 命令中，所以必须 URL-safe、可读、小写。
+MVP：项目 `.pi/skills` 和 `.pi/prompts`；手动 reload；简单主题。
 
-### 2.4 description 验证规则
-
-```typescript
-// core/skills.ts: validateDescription()
-function validateDescription(description: string | undefined): string[] {
-    if (!description || description.trim() === '')
-        return ['description is required']
-    if (description.length > MAX_DESCRIPTION_LENGTH)  // 1024 chars
-        errors.push(`description exceeds ${MAX_DESCRIPTION_LENGTH} characters`)
-    return errors
-}
-```
-
-> **设计意图**：`description` 是模型决定何时调用技能的依据，必须有且可读。
-
----
-
-## 3. 技能发现机制
-
-### 3.1 三种来源
-
-```mermaid
-flowchart TD
-    A[技能来源] --> B[用户级<br/>~/.pi/skills/]
-    A --> C[项目级<br/>.pi/skills/]
-    A --> D[显式路径<br/>--skill-paths]
-
-    B --> E[loadSkillsFromDir<br/>source='user']
-    C --> E2[loadSkillsFromDir<br/>source='project']
-    D --> E3[loadSkillsFromDir<br/>source='path']
-
-    E --> F[skillMap 合并<br/>去重 + 冲突检测]
-    E2 --> F
-    E3 --> F
-    F --> G[返回 Skill[]]
-```
-
-### 3.2 目录扫描规则
-
-```typescript
-// core/skills.ts: loadSkillsFromDirInternal()
-// 发现规则：
-// 1. 如果目录包含 SKILL.md → 把该目录当作技能根目录，不再递归
-// 2. 否则，加载根目录的直接 .md 子文件
-// 3. 递归扫描子目录，寻找 SKILL.md
-```
-
-示例目录结构：
-
-```
-~/.pi/skills/
-├── react-dev/
-│   └── SKILL.md        ← 整个 react-dev 目录是一个技能
-├── vue-best-practices/
-│   └── SKILL.md        ← 整个 vue-best-practices 是一个技能
-└── snippets.md         ← 直接的 .md 文件也是一个技能（用文件名作为 name）
-```
-
-### 3.3 忽略规则
-
-```typescript
-// 支持 .gitignore / .ignore / .fdignore 语法
-function addIgnoreRules(ig, dir, rootDir): void {
-    for (const filename of IGNOREFileNames) {
-        const ignorePath = join(dir, filename)
-        const content = readFileSync(ignorePath, 'utf-8')
-        const patterns = parseIgnoreFile(content)
-        ig.add(patterns)
-    }
-}
-```
-
----
-
-## 4. 加载链路
-
-### 4.1 loadSkills 的完整流程
-
-```mermaid
-flowchart TD
-    A[loadSkills options] --> B[resolve agentDir + cwd]
-    B --> C{includeDefaults?}
-    C -->|是| D[loadSkillsFromDir<br/>user 级]
-    C -->|是| E[loadSkillsFromDir<br/>project 级]
-    D --> F[skillMap]
-    E --> F
-    C -->|否| G[跳过默认路径]
-    G --> H[处理 --skill-paths 显式路径]
-    H --> I{是目录?}
-    I -->|是| J[loadSkillsFromDir]
-    I -->|否 .md| K[loadSkillFromFile]
-    J --> F
-    K --> F
-    F --> L[冲突检测<br/>同名 skill 警告]
-    L --> M[返回 { skills, diagnostics }]
-```
-
-### 4.2 loadSkillFromFile 细节
-
-```typescript
-// core/skills.ts: loadSkillFromFile()
-function loadSkillFromFile(filePath, source) {
-    const rawContent = readFileSync(filePath, 'utf-8')
-    const { frontmatter } = parseFrontmatter(rawContent)
-    const skillDir = dirname(filePath)
-    const parentDirName = basename(skillDir)
-
-    // 1. 验证 description（缺少则拒绝加载）
-    // 2. name = frontmatter.name || parentDirName
-    // 3. 验证 name（警告但仍加载）
-    // 4. 返回 Skill 对象
-
-    return {
-        skill: {
-            name,
-            description: frontmatter.description,
-            filePath,
-            baseDir: skillDir,
-            sourceInfo: createSkillSourceInfo(filePath, skillDir, source),
-            disableModelInvocation: frontmatter['disable-model-invocation'] === true,
-        },
-        diagnostics: [...]  // 验证警告
-    }
-}
-```
-
----
-
-## 5. 冲突处理
-
-### 5.1 同名冲突
-
-两个技能不能有相同的 `name`。pi 用 `Map<name, Skill>` 存储，**第一个加载的生效**：
-
-```typescript
-// core/skills.ts: loadSkills() 中的冲突处理
-for (const skill of result.skills) {
-    const realPath = canonicalizePath(skill.filePath)
-
-    if (realPathSet.has(realPath)) continue  // 相同文件（symlink），跳过
-
-    const existing = skillMap.get(skill.name)
-    if (existing) {
-        // 冲突！记录警告，第一个加载的优先
-        collisionDiagnostics.push({
-            type: 'collision',
-            message: `name "${skill.name}" collision`,
-            path: skill.filePath,
-            collision: {
-                winnerPath: existing.filePath,  // 先到先得
-                loserPath: skill.filePath,
-            }
-        })
-    } else {
-        skillMap.set(skill.name, skill)
-    }
-}
-```
-
-### 5.2 Symlink 去重
-
-```typescript
-// 同一个文件通过 symlink 加载两次，只保留一份
-const realPath = canonicalizePath(skill.filePath)
-if (realPathSet.has(realPath)) continue
-realPathSet.add(realPath)
-```
-
----
-
-## 6. formatSkillsForPrompt：技能注入 System Prompt
-
-### 6.1 输出格式
-
-```typescript
-// core/skills.ts: formatSkillsForPrompt()
-export function formatSkillsForPrompt(skills: Skill[]): string {
-    const visibleSkills = skills.filter(s => !s.disableModelInvocation)
-
-    if (visibleSkills.length === 0) return ""
-
-    const lines = [
-        "\n\nThe following skills provide specialized instructions for specific tasks.",
-        "Use the read tool to load a skill's file when the task matches its description.",
-        "When a skill file references a relative path, resolve it against the skill directory...",
-        "",
-        "<available_skills>",
-    ]
-
-    for (const skill of visibleSkills) {
-        lines.push("  <skill>")
-        lines.push(`    <name>${escapeXml(skill.name)}</name>`)
-        lines.push(`    <description>${escapeXml(skill.description)}</description>`)
-        lines.push(`    <location>${escapeXml(skill.filePath)}</location>`)
-        lines.push("  </skill>")
-    }
-
-    lines.push("</available_skills>")
-    return lines.join("\n")
-}
-```
-
-### 6.2 XML 格式的优点
-
-1. **LLM 容易解析**：比 JSON 更像自然语言
-2. **防止注入**：`<skill>` 块内的内容不会被误解析为指令
-3. **可扩展**：未来可以加 `<category>`、`<version>` 等字段
-
-### 6.3 disable-model-invocation 的作用
-
-```typescript
-// SKILL.md 中设置 disable-model-invocation: true
-// → 不出现在 <available_skills> 中
-// → 只能通过 /skill:name 显式调用
-const visibleSkills = skills.filter(s => !s.disableModelInvocation)
-```
-
----
-
-## 7. 技能如何被调用
-
-### 7.1 /skill:name 命令
-
-```typescript
-// core/agent-session.ts: _expandSkillCommand()
-private _expandSkillCommand(text: string): string {
-    if (!text.startsWith('/skill:')) return text
-
-    const skillName = text.slice(7, text.indexOf(' ') || undefined)
-    const skill = this.resourceLoader.getSkills().skills.find(s => s.name === skillName)
-
-    if (!skill) return text  // 未找到，原样传递
-
-    const content = readFileSync(skill.filePath, 'utf-8')
-    const body = stripFrontmatter(content).trim()
-
-    // 包装成 <skill> 块，附加参数
-    const skillBlock = `<skill name="${skill.name}" location="${skill.filePath}">
-References are relative to ${skill.baseDir}.
-
-${body}
-</skill>`
-
-    return args ? `${skillBlock}\n\n${args}` : skillBlock
-}
-```
-
-### 7.2 技能调用时的文件路径解析
-
-`<skill>` 块中包含：
-
-```
-References are relative to ${skill.baseDir}.
-```
-
-这让技能中的相对路径引用能被正确解析为绝对路径。
-
----
-
-## 8. 技能在 System Prompt 中的位置
-
-```mermaid
-flowchart LR
-    A[system prompt] --> B[customPrompt?]
-    B -->|是| C[直接使用]
-    B -->|否| D[默认构建]
-
-    D --> E[tools list]
-    D --> F[guidelines]
-    D --> G[pi docs 路径]
-    D --> H[appendSystemPrompt]
-    H --> I[contextFiles]
-    I --> J[skills<br/>formatSkillsForPrompt()]
-    J --> K[date + cwd]
-```
-
-skills 被放在 `contextFiles` **之后**、`date + cwd` **之前**。
-
----
-
-## 9. SourceInfo：技能的来源追踪
-
-```typescript
-// core/skills.ts: createSkillSourceInfo()
-function createSkillSourceInfo(filePath, baseDir, source) {
-    switch (source) {
-        case 'user':
-            return createSyntheticSourceInfo(filePath, {
-                source: 'local', scope: 'user', baseDir
-            })
-        case 'project':
-            return createSyntheticSourceInfo(filePath, {
-                source: 'local', scope: 'project', baseDir
-            })
-        case 'path':
-            return createSyntheticSourceInfo(filePath, { source: 'local', baseDir })
-        default:
-            return createSyntheticSourceInfo(filePath, { source, baseDir })
-    }
-}
-```
-
-`sourceInfo` 用于调试和诊断，让用户知道一个技能是从哪里加载的。
-
----
-
-## 10. 诊断信息
-
-```typescript
-export interface ResourceDiagnostic {
-    type: 'warning' | 'collision' | 'error'
-    message: string
-    path: string
-    collision?: {
-        resourceType: 'skill'
-        name: string
-        winnerPath: string
-        loserPath: string
-    }
-}
-```
-
-返回的 `diagnostics` 数组包含所有验证警告和冲突信息，UI 可以展示给用户。
-
----
-
-## 11. 完整调用示例
-
-```mermaid
-sequenceDiagram
-    participant User as 用户
-    participant Session as AgentSession
-    participant RL as ResourceLoader
-    participant Skills as Skills Module
-    participant FS as 文件系统
-
-    User->>Session: /skill:react-dev build a button
-    Session->>RL: getSkills()
-    RL->>Skills: loadSkills()
-    Skills->>FS: 扫描 skills/ 目录
-    FS-->>Skills: SKILL.md 文件
-    Skills-->>RL: Skill[]
-    RL-->>Session: skills
-    Session->>Session: _expandSkillCommand()
-    Session->>FS: readFileSync(react-dev/SKILL.md)
-    FS-->>Session: 技能内容
-    Session->>Session: 包装成 <skill> 块
-    Session->>Agent: prompt(<skill>块 + 用户参数)
-```
-
----
-
-## 12. 设计亮点
-
-| 特性 | 实现方式 | 为什么 |
-|------|----------|--------|
-| 目录作为技能单元 | 扫描 SKILL.md 识别根目录 | 技能需要多个文件时很自然 |
-| 同名冲突先到先得 | Map + collisionDiagnostics | 简单高效，用户可见警告 |
-| disable-model-invocation | filter 排除 | 需要手动触发的技能不污染 prompt |
-| XML 格式注入 | formatSkillsForPrompt | LLM 友好，可扩展 |
-| 相对路径标注 | 硬编码 "References are relative to..." | 让相对路径引用可被解析 |
-
----
-
-> **下一步阅读**：[第14章 Slash Commands](./chapter-14-slash-commands.md) — 理解 /skill 命令和 slash commands 的完整解析逻辑。
+生产级：全局/项目/package 多来源；资源 diagnostics；name collision；enable/disable；sourceInfo；packages install/update/remove/list/config；资源热重载；安全提示。

@@ -1,352 +1,70 @@
-# 第3章 Tools：工具系统
-
-> **本章目标**：解释 Tool 接口、工具注册、权限入口和并发执行模型。
-> **pi 源码对照**：
-> - `packages/coding-agent/src/core/tools/index.ts` — 工具注册表
-> - `packages/coding-agent/src/core/tools/bash.ts` — Bash 工具
-> - `packages/coding-agent/src/core/tools/read.ts` — Read 工具
-> - `packages/coding-agent/src/core/tools/edit.ts` — Edit 工具
-> - `packages/coding-agent/src/core/tools/write.ts` — Write 工具
-> - `packages/coding-agent/src/core/tools/find.ts` — Glob/Find 工具
-> - `packages/coding-agent/src/core/tools/grep.ts` — Grep 工具
->
-> **本章结束能做什么**：能实现一个可注册、可校验、可并发分组、可被模型调用的工具系统。
-> **阅读时间**：约 30 分钟。
-
----
-
-## 1. 工具四分类模型
-
-pi 的工具按**风险等级**和**能力类型**划分为四个梯队：
-
-| 分类 | 工具列表 | 并发特性 | 权限行为 |
-|------|----------|----------|----------|
-| **观察类 (Read-only)** | Read, Grep, Glob, WebFetch | 可并发执行 | 通常放行 |
-| **计划类 (Planning)** | TaskCreate, TaskUpdate | 串行执行 | 低风险 |
-| **执行类 (Write)** | Write, Edit, Bash | 串行执行 | 中度权限检查 |
-| **高风险类 (High-risk)** | Bash(write/delete), Agent, Skill | 串行执行 | 强制权限确认 |
-
-### 1.1 并发安全判断
-
-```typescript
-// packages/coding-agent/src/core/tools/index.ts
-export function isReadOnlyTool(toolName: string): boolean {
-  const readOnlyTools = ['Read', 'Glob', 'Grep', 'WebFetch', 'TaskList', 'TaskGet']
-  return readOnlyTools.includes(toolName)
-}
-
-export function isConcurrencySafe(toolName: string): boolean {
-  return isReadOnlyTool(toolName)
-}
-```
-
----
-
-## 2. 工具接口
-
-### 2.1 Tool 基类
-
-```typescript
-// packages/coding-agent/src/core/tools/index.ts
-export interface Tool {
-  name: string
-  description: string
-  inputSchema: ZodType
-  execute(input: unknown): Promise<ToolResult>
-  isReadOnly?(): boolean
-  isConcurrencySafe?(): boolean
-  isDestructive?(): boolean
-}
-```
-
-### 2.2 pi 内置工具
-
-```typescript
-// packages/coding-agent/src/core/tools/index.ts
-export const BUILT_IN_TOOLS: Tool[] = [
-  ReadTool,
-  BashTool,
-  EditTool,
-  WriteTool,
-  GlobTool,
-  GrepTool,
-  LsTool,
-]
-```
-
----
-
-## 3. Read 工具详解
-
-### 3.1 实现
-
-```typescript
-// packages/coding-agent/src/core/tools/read.ts
-import { z } from 'zod'
-import { readFile } from 'fs/promises'
-import { Tool } from './index'
-
-export const ReadArgs = z.object({
-  file_path: z.string().describe('Path to the file to read'),
-  offset: z.number().int().nonnegative().optional()
-    .describe('Line offset (0-indexed)'),
-  limit: z.number().int().positive().optional()
-    .describe('Maximum number of lines to read'),
-})
-
-export type ReadArgs = z.infer<typeof ReadArgs>
-
-export const readTool: Tool = {
-  name: 'Read',
-  description: 'Read the contents of a file',
-  inputSchema: ReadArgs,
-  isReadOnly: () => true,
-  isConcurrencySafe: () => true,
-
-  async execute(input: unknown) {
-    const args = ReadArgs.parse(input)
-
-    try {
-      const content = await readFile(args.file_path, 'utf-8')
-      const lines = content.split('\n')
-
-      const start = args.offset ?? 0
-      const end = args.limit ? start + args.limit : lines.length
-
-      const selectedLines = lines.slice(start, end)
-      const output = selectedLines.join('\n')
-
-      return {
-        type: 'text',
-        content: output,
-        metadata: {
-          linesRead: selectedLines.length,
-          totalLines: lines.length,
-        }
-      }
-    } catch (error) {
-      return {
-        type: 'error',
-        content: `Failed to read file: ${error.message}`,
-      }
-    }
-  },
-}
-```
-
-### 3.2 关键设计点
-
-- **Zod 校验**：`ReadArgs.parse(input)` 在工具入口做运行时校验
-- **行偏移支持**：`offset` + `limit` 支持大文件的部分读取
-- **只读标记**：`isReadOnly: () => true` 使工具可并发执行
-
----
-
-## 4. Bash 工具详解
-
-### 4.1 实现
-
-```typescript
-// packages/coding-agent/src/core/tools/bash.ts
-import { z } from 'zod'
-import { exec } from 'child_process'
-import { promisify } from 'util'
-import { Tool } from './index'
-
-const execAsync = promisify(exec)
-
-export const BashArgs = z.object({
-  command: z.string().describe('Shell command to execute'),
-  timeout: z.number().int().positive().optional()
-    .describe('Timeout in milliseconds'),
-  cwd: z.string().optional()
-    .describe('Working directory for the command'),
-})
-
-export type BashArgs = z.infer<typeof BashArgs>
-
-export const bashTool: Tool = {
-  name: 'Bash',
-  description: 'Execute a shell command',
-  inputSchema: BashArgs,
-  isReadOnly: () => false,
-  isConcurrencySafe: () => false,
-  isDestructive: (input) => {
-    const cmd = (input as BashArgs).command ?? ''
-    const destructivePatterns = [
-      /rm\s+-rf/i, /drop\s+database/i,
-      /git\s+push\s+--force/i, />\s*\//,
-    ]
-    return destructivePatterns.some(p => p.test(cmd))
-  },
-
-  async execute(input: unknown) {
-    const args = BashArgs.parse(input)
-
-    try {
-      const { stdout, stderr } = await execAsync(args.command, {
-        timeout: args.timeout ?? 120_000,
-        cwd: args.cwd,
-      })
-
-      return {
-        type: 'text',
-        content: stdout + stderr,
-        metadata: {
-          exitCode: 0,
-        }
-      }
-    } catch (error) {
-      return {
-        type: 'error',
-        content: error.message,
-        metadata: {
-          exitCode: error.code ?? 1,
-        }
-      }
-    }
-  },
-}
-```
-
-### 4.2 关键设计点
-
-- **破坏性检测**：`isDestructive` 检查危险命令模式
-- **超时控制**：默认 120 秒超时
-- **错误处理**：返回 exitCode 供 Agent 判断是否重试
-
----
-
-## 5. Edit 工具详解
-
-### 5.1 实现
-
-```typescript
-// packages/coding-agent/src/core/tools/edit.ts
-import { z } from 'zod'
-import { readFile, writeFile } from 'fs/promises'
-import { Tool } from './index'
-
-export const EditArgs = z.object({
-  file_path: z.string().describe('Path to the file to edit'),
-  old_string: z.string().describe('Text to replace (exact match)'),
-  new_string: z.string().describe('Replacement text'),
-})
-
-export type EditArgs = z.infer<typeof EditArgs>
-
-export const editTool: Tool = {
-  name: 'Edit',
-  description: 'Edit a file by replacing text',
-  inputSchema: EditArgs,
-  isReadOnly: () => false,
-  isConcurrencySafe: () => false,
-
-  async execute(input: unknown) {
-    const args = EditArgs.parse(input)
-
-    const content = await readFile(args.file_path, 'utf-8')
-
-    if (!content.includes(args.old_string)) {
-      return {
-        type: 'error',
-        content: `old_string not found in file: ${args.file_path}`,
-      }
-    }
-
-    const newContent = content.replace(args.old_string, args.new_string)
-    await writeFile(args.file_path, newContent, 'utf-8')
-
-    return {
-      type: 'text',
-      content: `Successfully edited ${args.file_path}`,
-    }
-  },
-}
-```
-
----
-
-## 6. 工具注册表
-
-### 6.1 工具池组装
-
-```typescript
-// packages/coding-agent/src/core/tools/index.ts
-export function getToolByName(name: string): Tool | undefined {
-  return BUILT_IN_TOOLS.find(t => t.name === name)
-}
-
-export function getAllToolDefinitions(): ToolDefinition[] {
-  return BUILT_IN_TOOLS.map(tool => ({
-    name: tool.name,
-    description: tool.description,
-    input_schema: zodToJsonSchema(tool.inputSchema),
-  }))
-}
-```
-
-### 6.2 工具执行入口
-
-```typescript
-// packages/coding-agent/src/core/tools/index.ts
-export async function executeTool(
-  toolName: string,
-  toolInput: unknown,
-  tools: Tool[],
-): Promise<ToolResult> {
-  const tool = tools.find(t => t.name === toolName)
-
-  if (!tool) {
-    return {
-      type: 'error',
-      content: `Tool not found: ${toolName}`,
-    }
-  }
-
-  return tool.execute(toolInput)
-}
-```
-
----
-
-## 7. 工具并发分组
-
-### 7.1 分组策略
-
-```typescript
-// packages/coding-agent/src/core/tools/index.ts
-export function groupToolCallsByConcurrency(
-  toolCalls: ToolCall[],
-): ToolCall[][] {
-  const readOnly = toolCalls.filter(tc =>
-    isReadOnlyTool(tc.name)
-  )
-  const write = toolCalls.filter(tc =>
-    !isReadOnlyTool(tc.name)
-  )
-
-  const groups: ToolCall[][] = []
-  if (readOnly.length > 0) groups.push(readOnly)
-  if (write.length > 0) groups.push(write)
-
-  return groups
-}
-```
-
-### 7.2 并发执行
-
-```typescript
-export async function executeToolGroup(
-  group: ToolCall[],
-  tools: Tool[],
-): Promise<ToolResult[]> {
-  return Promise.all(
-    group.map(tc => executeTool(tc.name, tc.input, tools))
-  )
-}
-```
-
----
-
-> **下一步阅读**：[第4章 Streaming API Client](./chapter-04-streaming-api-client.md) — API 客户端深度。
+# 第3章 Tools：模型能力的受控出口
+
+## 3.1 工具系统解决什么问题
+
+LLM 不能直接读文件、改代码、跑命令。Tool 系统把外部副作用包装成可描述、可校验、可拦截、可渲染、可持久化的能力。对 coding agent 来说，工具是模型和真实世界之间的唯一受控出口。
+
+pi 的产品层工具由 `createToolDefinition()` 创建，入口见 [tools/index.ts#L96](/source-code/packages/coding-agent/src/core/tools/index.ts#L96)，集合由 `createAllToolDefinitions()` 输出，见 [tools/index.ts#L156](/source-code/packages/coding-agent/src/core/tools/index.ts#L156)。低层 loop 只认 `AgentTool`；coding-agent 用 `ToolDefinition` 保存 label、description、schema、渲染器、来源和工具操作，再适配成低层工具。
+
+## 3.2 默认工具与可选工具
+
+quickstart 文档说明，pi 默认给模型四个工具：`read`、`write`、`edit`、`bash`。`grep`、`find`、`ls` 是额外内置只读工具，可以通过 tool options 启用。usage 文档也列出完整内置集合。这个区别影响安全和用户预期：默认能力已经能修改文件和运行命令；只读审查场景应使用 `--tools read,grep,find,ls` 或禁用写工具。
+
+| 工具 | 默认 | 责任 | 复刻重点 |
+|---|---:|---|---|
+| `read` | 是 | 读取文件内容 | 路径解析、行范围、二进制/大文件处理、输出截断 |
+| `write` | 是 | 创建或覆盖文件 | 父目录、完整内容、覆盖风险、session/diff 观察 |
+| `edit` | 是 | 精准修改文件 | old/new 匹配、失败解释、diff、并发写保护 |
+| `bash` | 是 | 执行 shell 命令 | cwd、timeout、流式输出、进程树终止、hidden output |
+| `grep` | 否 | 搜索内容 | 优先 `rg`、忽略规则、输出限制 |
+| `find` | 否 | 查找文件 | ignore、目录边界、排序、截断 |
+| `ls` | 否 | 列目录 | 路径存在性、目录/文件标记、输出预算 |
+
+## 3.3 ToolDefinition 与 AgentTool
+
+`ToolDefinition` 是产品层抽象。它不仅包含执行函数，还包含参数 schema、描述、渲染、sourceInfo、是否可覆盖、操作实现等产品信息。低层 `AgentTool` 更小，只关心模型 schema、执行和执行模式。适配逻辑在 [tool-definition-wrapper.ts#L35](/source-code/packages/coding-agent/src/core/tools/tool-definition-wrapper.ts#L35)。
+
+这个分层让 pi 可以同时满足三类需求：
+
+- provider 只需要 JSON schema 和工具描述。
+- agent loop 只需要查找、校验、执行、回灌。
+- TUI/HTML/RPC 需要渲染工具调用和结果。
+
+复刻时不要把工具写成 `Record<string, Function>`。那会在参数校验、UI 展示、权限拦截、session 回放、SDK 暴露时迅速失控。
+
+## 3.4 参数校验与错误回灌
+
+工具参数来自模型，不可信。`prepareToolCall()` 会查找工具、预处理参数、校验 schema、运行 `beforeToolCall`，见 [agent-loop.ts#L562](/source-code/packages/agent/src/agent-loop.ts#L562)。如果工具不存在或参数错误，pi 会生成 error tool result，而不是抛出导致整个 loop 崩溃。
+
+这背后的设计原则是：模型犯错属于任务过程的一部分。把错误回灌给模型，模型才能改用正确路径、重新读文件或修正参数。只有 runtime 本身不可继续时，才应该终止 agent run。
+
+## 3.5 工具输出预算
+
+工具输出是 token 爆炸的主要来源。一个 `grep` 或 `bash` 可能产生数万行；如果全部塞进上下文，模型窗口会被日志占满。pi 有截断工具和 output accumulator，分别见 [truncate.ts#L78](/source-code/packages/coding-agent/src/core/tools/truncate.ts#L78) 和 [output-accumulator.ts#L29](/source-code/packages/coding-agent/src/core/tools/output-accumulator.ts#L29)。
+
+生产级工具输出策略至少要支持：
+
+- 头尾保留，中间省略。
+- 明确告诉模型输出被截断。
+- 对超大输出落盘，只把路径、摘要和关键片段放进上下文。
+- UI 可以显示比模型更多的信息，但不能默认都进模型。
+- session 记录足够信息以支持审计。
+
+## 3.6 Bash 是工具也是环境边界
+
+`bash` 是最危险也最有用的工具。它会执行真实命令、产生真实文件改动，并可能泄露环境信息。pi 的安全策略不是内置通用权限弹窗，而是通过工具定义、扩展 hook、tool options、外部隔离环境和用户工作流控制风险。
+
+复刻时要给 `bash` 单独设计：
+
+- `cwd` 必须明确。
+- timeout 必须可配置。
+- stdout/stderr 要流式更新 UI。
+- 进程树要能终止。
+- `!command` 和 `!!command` 要区分是否进入模型上下文。
+- 对远程执行、容器执行、受限 shell，应该通过 operations adapter 或 extension 实现。
+
+## 3.7 复刻原则
+
+MVP 工具系统：`read`、`write`、`edit`、`bash`；每个工具有 schema、description、execute；tool call 错误变成 tool result；输出有截断；所有执行可 abort。
+
+生产级工具系统：工具来源可区分 built-in、extension、SDK、package；active tools 可切换；工具可覆盖；工具有自定义渲染；before/after tool hook；远程执行适配；工具事件进入 RPC/JSON/session/eval。

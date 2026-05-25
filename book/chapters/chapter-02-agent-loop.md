@@ -1,302 +1,79 @@
-# 第2章 Agent Loop：核心状态机
+# 第2章 Agent Loop：从一次 prompt 到任务完成
 
-> **本章目标**：拆解 pi Agent Loop 的状态机、退出路径和工具闭环。
-> **pi 源码对照**：
-> - `packages/agent/src/agent-loop.ts` — Agent Loop 主循环
-> - `packages/agent/src/agent.ts` — Agent 主类
-> - `packages/coding-agent/src/core/agent-session-runtime.ts` — 会话运行时
-> - `packages/coding-agent/src/core/agent-session.ts` — Agent Session 实现
->
-> **本章结束能做什么**：能实现并审查一个生产级 Agent Loop。
-> **阅读时间**：约 35 分钟。
+## 2.1 Agent Loop 的问题边界
 
----
+LLM 每次只能生成下一段内容或下一步工具请求，但 coding 任务需要多轮推理、多次文件读取、多次命令执行和错误修正。Agent Loop 解决的就是“把模型的下一步生成变成可持续完成任务的运行时循环”。
 
-## 1. Agent Loop 概述
+pi 的低层入口是 [agentLoop()#L31](/source-code/packages/agent/src/agent-loop.ts#L31) 和 [agentLoopContinue()#L64](/source-code/packages/agent/src/agent-loop.ts#L64)。它们返回 `EventStream`，不是直接返回字符串。这个选择决定了后续架构：UI 不需要等待最终文本，RPC 可以输出 JSONL 事件，测试可以断言中间过程，session 可以只在稳定边界写入。
 
-Agent Loop 是整个 Agent 系统的核心编排引擎。它接收用户输入，通过 LLM 生成响应，决定是否调用工具，并循环直到任务完成或达到终止条件。
+## 2.2 两层循环
 
-### 1.1 核心模式
+核心循环在 [agent-loop.ts#L155](/source-code/packages/agent/src/agent-loop.ts#L155)。它有两种队列语义：
 
-pi 使用 AsyncGenerator 模式实现 Agent Loop：
+- steering：用户在 agent 运行中追加的指令，进入当前工作流的下一轮 turn。
+- follow-up：用户排队的下一件事，等当前 agent run 结束后再处理。
 
-```typescript
-// packages/agent/src/agent-loop.ts
-export async function* runAgentLoop(
-  harness: AgentHarness,
-  session: AgentSession,
-): AsyncGenerator<AgentEvent, AgentResult> {
-  let turnCount = 0
-  while (true) {
-    yield { type: 'turn_start', turnCount }
+这比“用户输入就立刻打断 provider 请求”更可控。provider request 和工具执行都有副作用，随意并发会造成 transcript 顺序不确定、工具结果丢失、UI 状态混乱。pi 把用户继续输入变成队列，在安全点 drain。
 
-    const result = yield* executeTurn(harness, session)
-
-    if (result.done) {
-      return result.value
-    }
-
-    turnCount++
-  }
-}
+```mermaid
+flowchart TD
+  Start[agent_start] --> Turn[turn_start]
+  Turn --> Steering[drain steering queue]
+  Steering --> Stream[streamAssistantResponse]
+  Stream --> HasTool{assistant 有 toolCall?}
+  HasTool -->|否| EndTurn[turn_end]
+  HasTool -->|是| Execute[executeToolCalls]
+  Execute --> Result[toolResult messages]
+  Result --> EndTurn
+  EndTurn --> Stop{shouldStopAfterTurn?}
+  Stop -->|否| Turn
+  Stop -->|是| End[agent_end]
 ```
 
-### 1.2 pi 的 Agent Session
+## 2.3 流式 assistant reducer
 
-```typescript
-// packages/coding-agent/src/core/agent-session.ts
-export class AgentSession {
-  readonly id: string
-  private messages: Message[] = []
-  private turnCount: number = 0
+`streamAssistantResponse()` 从 [agent-loop.ts#L275](/source-code/packages/agent/src/agent-loop.ts#L275) 开始执行 provider 请求。它先运行 `transformContext`，再 `convertToLlm`，再调用 `streamSimple`。这三个边界分别代表：
 
-  constructor(
-    private harness: AgentHarness,
-    config: SessionConfig,
-  ) {
-    this.id = config.id ?? generateSessionId()
-  }
+1. 内部上下文变换：扩展、压缩、产品消息决定是否进入模型。
+2. provider 消息转换：把 pi 的 `AgentMessage` 转成 provider API 能接受的 `Message`。
+3. provider 适配：不同模型协议统一成 assistant event stream。
 
-  async *run(): AsyncGenerator<SessionEvent, SessionResult> {
-    for await (const event of this.harness.generateResponse(this)) {
-      yield event
-    }
-  }
-}
-```
+流式事件进入 reducer 后，`start` 创建 partial assistant message，`text_delta`、`thinking_delta`、`toolcall_delta` 更新 partial，最终事件产生完整 assistant message。相关 reducer 从 [agent-loop.ts#L306](/source-code/packages/agent/src/agent-loop.ts#L306) 附近开始。partial 适合 UI，final message 适合 session。
 
----
+## 2.4 工具执行路径
 
-## 2. 状态机设计
+当 assistant message 包含 tool call，loop 调用 [executeToolCalls()#L373](/source-code/packages/agent/src/agent-loop.ts#L373)。工具执行不是简单 `tools[name](args)`，而是一个有边界的管道：
 
-### 2.1 状态字段
+1. 根据 tool name 查找 `AgentTool`。
+2. 调用 `prepareToolCall()`，入口见 [agent-loop.ts#L562](/source-code/packages/agent/src/agent-loop.ts#L562)。
+3. 运行参数校验和参数预处理。
+4. 运行 `beforeToolCall` hook，允许扩展阻止或修改。
+5. 根据 sequential/parallel 规则执行。
+6. 捕获工具错误并转成 error tool result。
+7. 运行 `afterToolCall` hook，允许扩展修改结果。
+8. 生成 `toolResult` message。
+9. 发出 `tool_execution_*` 和 `message_*` 事件。
 
-pi 的 Agent Loop 状态包含：
+如果工具声明或全局配置要求 sequential，工具串行执行；否则可并行。这个差异很重要：读文件工具通常可以并行，写文件或 shell 工具可能必须串行。
 
-```typescript
-// packages/agent/src/harness/types.ts
-export interface LoopState {
-  messages: Message[]
-  turnCount: number
-  autoCompactTracking: AutoCompactState | undefined
-  maxOutputTokensRecoveryCount: number
-  pendingToolUseSummary: Promise<string> | undefined
-  stopHookActive: boolean
-  transition: Continue | undefined
-}
-```
+## 2.5 事件是协议，不是日志
 
-### 2.2 退出路径
+loop 发出的事件至少包括 `agent_start`、`turn_start`、`message_start`、`message_update`、`message_end`、`tool_execution_start`、`tool_execution_update`、`tool_execution_end`、`turn_end`、`agent_end`。`Agent` 通过事件更新内部状态；`AgentSession` 通过事件持久化、触发扩展和通知 UI。
 
-Agent Loop 的 9 条退出路径：
+这意味着事件必须稳定、结构化、有明确时机。`message_update` 不是最终事实；`message_end` 才是稳定消息。`tool_execution_update` 可以显示 shell 输出；`tool_execution_end` 才能记录 exit code 或最终结果。复刻时如果只输出字符串日志，后续 RPC、eval、扩展 UI 都会很难做。
 
-| 路径 | 条件 | 恢复策略 |
-|------|------|---------|
-| `end_turn` | 模型正常结束 | 返回完成结果 |
-| `tool_use` | 模型调用工具 | 执行工具并继续循环 |
-| `max_tokens` | 输出达到上限 | 扩大 max_tokens 重试 |
-| `context_overflow` | 上下文溢出 | 触发压缩并重试 |
-| `stop_hook` | Stop Hook 阻止 | 等待或中止 |
-| `error` | 执行出错 | 错误处理后决定是否继续 |
-| `user_interrupt` | 用户主动中断 | 优雅退出 |
-| `max_turns` | 达到轮次上限 | 返回当前状态 |
-| `budget_exceeded` | 超出预算 | 停止并报告 |
+## 2.6 错误语义
 
-### 2.3 循环流程图
+pi 的 loop 设计倾向于“能进入 transcript 的错误就进入 transcript”。工具参数错、工具不存在、工具抛错，都应该转成 tool result，让模型能恢复。provider 失败则生成 assistant error message 或触发 retry/compaction 策略。用户 abort 通过 `AbortSignal` 下传，不应该伪装成普通失败。
 
-```
-                    ┌─────────────┐
-                    │  turn_start │
-                    └──────┬──────┘
-                           ▼
-                    ┌─────────────┐
-              ┌───▶│  AI 生成    │
-              │     └──────┬──────┘
-              │            ▼
-              │     ┌─────────────┐
-              │     │ 检查 stop   │
-              │     │   reason    │
-              │     └──────┬──────┘
-              │            │
-       ┌──────┼────────────┼──────┐
-       │      │            │      │
-       ▼      ▼            ▼      ▼
-   end_turn  tool_use  max_tokens  error
-       │      │            │      │
-       │      ▼            ▼      │
-       │  ┌────────┐  ┌────────┐ │
-       │  │执行工具│  │扩大token│ │
-       │  └───┬────┘  └────┬───┘ │
-       │      │            │     │
-       └──────┴────────────┴─────┘
-                    │ continue
-                    ▼
-              turn_start
-```
+复刻时要区分三类错误：
 
----
+- 可恢复工作错误：文件不存在、命令失败、工具参数不合法，进入上下文。
+- 运行时错误：provider 认证失败、网络失败、扩展异常，展示给用户并考虑 retry。
+- 控制流错误：abort、session switch、tree navigation，不应被模型误解成任务失败。
 
-## 3. StreamingToolExecutor 并发模型
+## 2.7 复刻原则
 
-### 3.1 工具执行策略
+MVP loop 必须具备：用户消息追加；provider 流式消费；assistant final message；tool call 校验执行；tool result 回灌；事件流；abort signal；错误消息；最大轮次或 stop 条件。
 
-pi 支持工具的并发执行，特别是只读工具：
-
-```typescript
-// packages/agent/src/agent-loop.ts
-export function groupToolsByConcurrency(
-  tools: ToolCall[]
-): ToolCall[][] {
-  // 可并发组：只读工具（Read, Grep, Glob 等）
-  const concurrencySafe = tools.filter(t => isReadOnlyTool(t))
-  // 需串行组：写操作工具（Bash, Write, Edit 等）
-  const exclusive = tools.filter(t => !isReadOnlyTool(t))
-
-  return [
-    ...(concurrencySafe.length > 0 ? [concurrencySafe] : []),
-    ...(exclusive.length > 0 ? [exclusive] : []),
-  ]
-}
-```
-
-### 3.2 执行循环
-
-```typescript
-async function executeToolGroup(
-  group: ToolCall[],
-  harness: AgentHarness,
-  session: AgentSession,
-): Promise<ToolResult[]> {
-  return Promise.all(group.map(tool =>
-    harness.executeTool(session, tool)
-  ))
-}
-```
-
----
-
-## 4. 压缩触发器
-
-### 4.1 自动压缩状态
-
-```typescript
-// packages/agent/src/harness/compaction/compaction.ts
-export interface AutoCompactTrackingState {
-  consecutiveFailures: number
-  lastCompactTime: number
-  compactReason: CompactReason
-}
-
-export type CompactReason =
-  | 'token_limit'
-  | 'auto_compact'
-  | 'manual'
-  | 'reactive'
-```
-
-### 4.2 压缩触发条件
-
-pi 的压缩在以下条件触发：
-
-1. **Token 超限**：当前消息列表接近模型上下文窗口
-2. **自动压缩**：按配置的 interval 定期压缩
-3. **手动触发**：用户通过命令触发
-4. **响应式压缩**：连续操作失败后触发
-
-### 4.3 4 阶段压缩管道
-
-```typescript
-// 阶段 1: Snip - 移除过长的 tool result 内容
-// 阶段 2: Microcompact - 合并连续的工具调用为摘要
-// 阶段 3: Context Collapse - 折叠早期对话
-// 阶段 4: AutoCompact - 完整上下文压缩
-```
-
----
-
-## 5. 熔断器模式
-
-### 5.1 压缩熔断器
-
-```typescript
-// packages/agent/src/harness/compaction/compaction.ts
-export class CompactionCircuitBreaker {
-  private failureCount = 0
-  private lastFailureTime = 0
-
-  readonly maxConsecutiveFailures = 3
-  readonly cooldownMs = 60_000
-
-  shouldTrip(): boolean {
-    return this.failureCount >= this.maxConsecutiveFailures
-  }
-
-  recordFailure(): void {
-    this.failureCount++
-    this.lastFailureTime = Date.now()
-  }
-
-  recordSuccess(): void {
-    this.failureCount = 0
-  }
-
-  isInCooldown(): boolean {
-    return Date.now() - this.lastFailureTime < this.cooldownMs
-  }
-}
-```
-
-### 5.2 API 熔断器
-
-API 调用使用类似的熔断器模式，防止连续失败导致资源耗尽。
-
----
-
-## 6. 关键代码解读
-
-### 6.1 Agent 主循环
-
-```typescript
-// packages/coding-agent/src/core/agent-session-runtime.ts
-export async function* runAgentLoop(
-  harness: AgentHarness,
-  session: AgentSession,
-): AsyncGenerator<AgentEvent, AgentResult> {
-  let turnCount = 0
-  const maxTurns = session.config.maxTurns ?? 100
-
-  while (turnCount < maxTurns) {
-    yield { type: 'turn_start', turnCount }
-
-    // 1. 检查是否需要压缩
-    if (shouldCompact(session)) {
-      yield* compactContext(session)
-    }
-
-    // 2. 生成 AI 响应
-    for await (const event of harness.generateResponse(session)) {
-      yield event
-
-      // 工具调用事件处理
-      if (event.type === 'tool_call') {
-        const result = await harness.executeTool(session, event.toolCall)
-        session.addMessage({ type: 'tool_result', ...result })
-        yield { type: 'tool_result', result }
-      }
-    }
-
-    // 3. 检查停止条件
-    if (session.shouldStop()) {
-      break
-    }
-
-    turnCount++
-  }
-
-  return { turnCount, finalState: session.getState() }
-}
-```
-
----
-
-> **下一步阅读**：[第3章 Tools](./chapter-03-tools.md) — 深入工具系统。
+生产级 loop 继续补：steering/follow-up 队列；parallel/sequential 工具执行；before/after hooks；context transform；provider payload hook；save point；auto retry；overflow compaction；session tree；可观测 trace。

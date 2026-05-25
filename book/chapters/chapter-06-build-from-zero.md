@@ -1,322 +1,132 @@
 # 第6章 从零构建最小 Agent
 
-> **本章目标**：从空项目实现一个最小可用 Code Agent。
-> **pi 源码对照**：
-> - `packages/agent/src/` — Agent Harness 核心
-> - `packages/coding-agent/examples/mini-agent/src/` — Mini-agent 示例
->
-> **本章结束能做什么**：能运行 mini-agent，并说明它与生产 pi 的差距。
-> **阅读时间**：约 60 分钟。
+## 6.1 最小可用目标
 
----
+最小 coding agent 不是一个调用模型的聊天脚本。它必须能完成一次真实代码任务：读文件、生成修改、执行工具、把工具结果回灌给模型、保存 transcript、能被中断、失败后能解释发生了什么。
 
-## 1. 总体架构
+本章给出复刻路线，不要求第一版就实现 pi 的全部能力。正确顺序是：先实现稳定 loop，再实现工具和 session，再做资源/扩展/TUI。
 
-```
+## 6.2 项目结构
+
+一个最小 TypeScript 项目可以这样拆：
+
+```text
 mini-agent/
-├── src/
-│   ├── index.ts          # CLI 入口
-│   ├── loop.ts           # Agent Loop
-│   ├── api.ts            # 流式 API 客户端
-│   ├── prompt.ts         # System Prompt
-│   ├── tools/
-│   │   ├── index.ts      # 工具接口
-│   │   ├── read.ts       # Read 工具
-│   │   ├── bash.ts       # Bash 工具
-│   │   ├── edit.ts       # Edit 工具
-│   │   └── agent.ts      # Sub-agent 工具
-│   ├── compact.ts        # 上下文压缩
-│   ├── memory.ts         # CLAUDE.md 加载
-│   └── mcp.ts           # MCP 客户端
+  src/
+    index.ts
+    model.ts
+    messages.ts
+    loop.ts
+    stream.ts
+    session.ts
+    tools/
+      read.ts
+      write.ts
+      edit.ts
+      bash.ts
 ```
 
----
+每个文件的责任要小：
 
-## 2. Step 1：搭起 Agent Loop 骨架
+- `messages.ts` 定义内部消息和 provider 消息转换。
+- `stream.ts` 适配一个 provider，输出统一 assistant event。
+- `loop.ts` 编排 provider、tool call、tool result 和 stop condition。
+- `session.ts` 做 JSONL append。
+- `tools/*` 只实现工具，不直接操作 loop。
 
-```typescript
-// src/loop.ts
-export type Message = {
-  role: 'user' | 'assistant' | 'tool'
-  content: string
-}
+## 6.3 消息类型
 
-export type LoopState = {
-  messages: Message[]
-  turnCount: number
-  totalCostUSD: number
-}
+第一版只需要三种消息：
 
-export type LoopResult =
-  | { reason: 'completed'; state: LoopState }
-  | { reason: 'max_turns'; state: LoopState }
-  | { reason: 'error'; error: Error }
+```ts
+type UserMessage = {
+  role: "user";
+  content: string;
+};
 
-export async function* runLoop(
-  initialInput: string,
-  config: LoopConfig,
-): AsyncGenerator<LoopEvent, LoopResult> {
-  const state: LoopState = {
-    messages: [{ role: 'user', content: initialInput }],
-    turnCount: 0,
-    totalCostUSD: 0,
-  }
+type AssistantMessage = {
+  role: "assistant";
+  content: Array<
+    | { type: "text"; text: string }
+    | { type: "toolCall"; id: string; name: string; arguments: unknown }
+  >;
+  stopReason?: "end_turn" | "tool_use" | "error" | "aborted";
+};
 
-  while (state.turnCount < config.maxTurns) {
-    yield { type: 'turn_start', turnCount: state.turnCount }
-
-    // 生成 AI 响应
-    const response = yield* generateAndExecute(state, config)
-
-    if (response.done) {
-      return { reason: 'completed', state }
-    }
-
-    state.turnCount++
-  }
-
-  return { reason: 'max_turns', state }
-}
+type ToolResultMessage = {
+  role: "toolResult";
+  toolCallId: string;
+  name: string;
+  result: unknown;
+  isError?: boolean;
+};
 ```
 
----
+后续再扩展 `bashExecution`、`custom`、`compactionSummary`、`branchSummary`。不要一开始就把 UI 消息、session entry 和 provider message 混成一个类型。
 
-## 3. Step 2：实现工具系统
+## 6.4 Loop 骨架
 
-```typescript
-// src/tools/index.ts
-export interface Tool {
-  name: string
-  description: string
-  inputSchema: ZodType
-  execute(input: unknown): Promise<ToolResult>
-}
+最小 loop 可以写成：
 
-export interface ToolResult {
-  type: 'text' | 'error'
-  content: string
-}
-```
+```ts
+while (!signal.aborted) {
+  const assistant = await streamAssistant(messages, tools, signal);
+  messages.push(assistant);
 
-### 3.1 Read 工具
+  const calls = assistant.content.filter((block) => block.type === "toolCall");
+  if (calls.length === 0) break;
 
-```typescript
-// src/tools/read.ts
-import { readFile } from 'fs/promises'
-import { z } from 'zod'
-import { Tool } from './index'
+  for (const call of calls) {
+    const tool = tools.get(call.name);
+    const result = tool
+      ? await tool.execute(call.arguments, signal)
+      : { isError: true, content: `Tool ${call.name} not found` };
 
-export const ReadArgs = z.object({
-  file_path: z.string(),
-  offset: z.number().optional(),
-  limit: z.number().optional(),
-})
-
-export const readTool: Tool = {
-  name: 'Read',
-  description: 'Read the contents of a file',
-  inputSchema: ReadArgs,
-
-  async execute(input) {
-    const args = ReadArgs.parse(input)
-    const content = await readFile(args.file_path, 'utf-8')
-    const lines = content.split('\n')
-    const start = args.offset ?? 0
-    const end = args.limit ? start + args.limit : lines.length
-    return { type: 'text', content: lines.slice(start, end).join('\n') }
-  },
-}
-```
-
-### 3.2 Bash 工具
-
-```typescript
-// src/tools/bash.ts
-import { exec } from 'child_process'
-import { promisify } from 'util'
-import { z } from 'zod'
-import { Tool } from './index'
-
-const execAsync = promisify(exec)
-
-export const BashArgs = z.object({
-  command: z.string(),
-  timeout: z.number().optional(),
-})
-
-export const bashTool: Tool = {
-  name: 'Bash',
-  description: 'Execute a shell command',
-  inputSchema: BashArgs,
-
-  async execute(input) {
-    const args = BashArgs.parse(input)
-    try {
-      const { stdout, stderr } = await execAsync(args.command, {
-        timeout: args.timeout ?? 120_000,
-      })
-      return { type: 'text', content: stdout + stderr }
-    } catch (error) {
-      return { type: 'error', content: error.message }
-    }
-  },
-}
-```
-
----
-
-## 4. Step 3：实现流式 API
-
-```typescript
-// src/api.ts
-import { z } from 'zod'
-
-export const MessageParam = z.object({
-  role: z.enum(['user', 'assistant']),
-  content: z.string(),
-})
-
-export async function* streamMessage(
-  apiKey: string,
-  params: {
-    model: string
-    messages: z.infer<typeof MessageParam>[]
-    tools: ToolDefinition[]
-    systemPrompt: string
-  }
-): AsyncGenerator<StreamEvent> {
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model: params.model,
-      messages: params.messages,
-      tools: params.tools,
-      system: params.systemPrompt,
-      stream: true,
-      max_tokens: 4096,
-    }),
-  })
-
-  const reader = response.body!.getReader()
-  const decoder = new TextDecoder()
-
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
-
-    const chunk = decoder.decode(value)
-    for (const line of chunk.split('\n')) {
-      if (line.startsWith('data: ')) {
-        const data = JSON.parse(line.slice(6))
-        yield parseSSEEvent(data)
-      }
-    }
+    messages.push({
+      role: "toolResult",
+      toolCallId: call.id,
+      name: call.name,
+      result,
+      isError: Boolean(result.isError),
+    });
   }
 }
 ```
 
----
+pi 的真实 loop 在这个骨架上增加了事件流、steering/follow-up、parallel tools、before/after hooks、transformContext、prepareNextTurn、错误消息和 save point，核心入口见 [agent-loop.ts#L155](/source-code/packages/agent/src/agent-loop.ts#L155)。
 
-## 5. Step 4：实现压缩
+## 6.5 Session 第一版
 
-```typescript
-// src/compact.ts
-export function compactMessages(
-  messages: Message[],
-  maxTokens: number,
-): Message[] {
-  // 阶段 1: Snip - 截断过长的 tool result
-  let result = snipLongToolResults(messages, 500)
+第一版 session 用 JSONL：
 
-  // 阶段 2: Microcompact - 合并连续的工具调用为摘要
-  result = microcompact(result)
-
-  // 阶段 3: 如果还不够，折叠早期对话
-  if (estimateTokens(result) > maxTokens) {
-    result = collapseOldMessages(result)
-  }
-
-  return result
-}
-
-function snipLongToolResults(messages: Message[], maxLength: number): Message[] {
-  return messages.map(msg => {
-    if (msg.role === 'tool' && msg.content.length > maxLength) {
-      return {
-        ...msg,
-        content: msg.content.slice(0, maxLength) + '\n... [snipped]',
-      }
-    }
-    return msg
-  })
-}
+```json
+{"type":"header","version":1,"id":"...","cwd":"/repo","createdAt":"..."}
+{"type":"message","id":"1","parentId":null,"message":{"role":"user","content":"..."}}
+{"type":"message","id":"2","parentId":"1","message":{"role":"assistant","content":[]}}
 ```
 
----
+这比保存一个 `messages.json` 数组更好，因为追加式写入在崩溃后更容易恢复，也为 tree/fork/clone 留出结构。pi 的 `SessionEntry` 定义在 [session-manager.ts#L138](/source-code/packages/coding-agent/src/core/session-manager.ts#L138)，`SessionManager` 从 [session-manager.ts#L711](/source-code/packages/coding-agent/src/core/session-manager.ts#L711) 开始。
 
-## 6. Step 5：实现 CLAUDE.md 加载
+## 6.6 工具第一版
 
-```typescript
-// src/memory.ts
-import { readFile } from 'fs/promises'
-import { glob } from 'glob'
-import { join } from 'path'
+先做四个工具：`read`、`write`、`edit`、`bash`。每个工具都要有：
 
-export async function loadCLAUDEMDs(
-  projectRoot: string,
-): Promise<string[]> {
-  const patterns = [
-    join(projectRoot, 'CLAUDE.md'),
-    join(projectRoot, '.claude', 'CLAUDE.md'),
-    join(projectRoot, '.claude', 'instructions.md'),
-  ]
+- `name`
+- `description`
+- `schema`
+- `execute(args, signal)`
+- 输出截断
+- 错误转 result
 
-  const results: string[] = []
+不要让 `bash` 或 `write` 直接向模型返回无限输出。不要让工具抛出的异常逃出 loop。工具失败是模型应该能看到并修正的事实。
 
-  for (const pattern of patterns) {
-    try {
-      const files = await glob(pattern)
-      for (const file of files) {
-        const content = await readFile(file, 'utf-8')
-        results.push(content)
-      }
-    } catch {
-      // File not found, skip
-    }
-  }
+## 6.7 从 MVP 到 pi 级别
 
-  return results
-}
-```
+四阶段路线：
 
----
+1. Loop 和消息：stream adapter、assistant reducer、tool call/result、abort、事件。
+2. 工具和 session：四个默认工具、JSONL append、resume、stats。
+3. 上下文和资源：context files、system prompt builder、prompt templates、skills、compaction。
+4. 产品化和生态：TUI、slash commands、extensions、settings、packages、SDK/RPC/JSON、providers、themes。
 
-## 7. 运行 mini-agent
-
-```bash
-cd examples/mini-agent
-npm install
-ANTHROPIC_API_KEY=sk-xxx npm run start "Fix the bug in src/index.ts"
-```
-
----
-
-## 8. 与生产 pi 的差距
-
-| 功能 | mini-agent | 生产 pi |
-|------|-----------|---------|
-| 工具数量 | 4 个 | 40+ 个 |
-| 压缩管道 | 2 阶段 | 4 阶段 |
-| 权限系统 | 无 | 完整权限流水线 |
-| Hook 系统 | 无 | 27 个注入点 |
-| MCP 支持 | 基础 | 完整 MCP 支持 |
-| Eval 系统 | 基础 | 完整 Eval 平台 |
-
----
-
-> **下一步阅读**：[第7章 Context Engineering](./chapter-07-context-engineering.md) — 上下文工程深入。
+这个顺序来自 pi 的设计：先有可测试 runtime，再有可扩展产品。反过来先做漂亮 TUI，通常会把核心逻辑锁死在界面里。

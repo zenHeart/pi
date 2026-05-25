@@ -1,156 +1,76 @@
-# 第14章 Slash Commands：用户触发命令
+# 第16章 Slash Commands：用户动作的命令路由
 
-> **本章目标**：解释用户主动触发的命令如何进入 Agent 编排层。
-> **pi 源码对照**：
-> - `packages/coding-agent/src/core/slash-commands.ts` — Slash Commands 实现
->
-> **本章结束能做什么**：能设计内置命令、自定义 markdown 命令、插件命令。
-> **阅读时间**：约 25 分钟。
+## 16.1 Slash Command 的职责
 
----
+slash command 是用户显式触发产品能力的入口。它不同于普通 prompt：`/model` 是状态切换，`/compact` 是 session mutation，`/export` 是文件输出，`/skill:name` 才会展开成任务上下文。把所有 `/xxx` 都拼进 prompt 是错误设计。
 
-## 1. 命令类型
+内置命令列表在 [slash-commands.ts#L18](/source-code/packages/coding-agent/src/core/slash-commands.ts#L18)，包括 settings、model、scoped-models、export、import、share、copy、name、session、changelog、hotkeys、fork、clone、tree、login、logout、new、compact、resume、reload、quit。这个列表既是用户功能地图，也是产品状态入口清单。
 
-### 1.1 命令分发
+## 16.2 三类命令来源
 
-```typescript
-// packages/coding-agent/src/core/slash-commands.ts
-export type CommandType =
-  | 'local'      // 本地立即执行
-  | 'prompt'     // 注入到对话流
-  | 'local-jsx'  // 弹 UI/Modal
+pi 的命令来源有三类：
 
-export interface Command {
-  name: string
-  description: string
-  type: CommandType
-  execute: (args: string[], context: CommandContext) => Promise<CommandResult>
-}
-```
+- built-in command：产品内置状态和 session 操作。
+- extension command：扩展注册的动作。
+- resource command：skill 和 prompt template 暴露的命令。
 
----
+`SlashCommandSource` 在 [slash-commands.ts#L4](/source-code/packages/coding-agent/src/core/slash-commands.ts#L4) 定义。`AgentSession.prompt()` 会优先判断命令，再决定是否进入 agent loop，入口见 [agent-session.ts#L962](/source-code/packages/coding-agent/src/core/agent-session.ts#L962)。
 
-## 2. 命令来源
+## 16.3 Streaming 中的命令语义
 
-| 来源 | 路径 | 优先级 |
-|------|------|--------|
-| 内置命令 | `commands/` 目录 | 最低 |
-| 用户命令 | `~/.claude/commands/*.md` | 中 |
-| 项目命令 | `.claude/commands/*.md` | 高 |
-| 插件命令 | 插件提供 | 中 |
-| MCP | MCP prompts | 中 |
+agent 正在运行时，命令不能随意执行。某些 extension command 即使 streaming 中也可以立即执行；某些命令必须等 idle；普通文本输入则进入 steering 或 follow-up 队列。`AgentSession` 在命令处理附近有明确错误信息，防止不能排队的 extension command 被 queued，相关逻辑见 [agent-session.ts#L1259](/source-code/packages/coding-agent/src/core/agent-session.ts#L1259)。
 
----
+复刻时必须为每个命令标注：
 
-## 3. 内置命令
+- 是否进入模型。
+- 是否要求 idle。
+- 是否能排队。
+- 是否修改 session。
+- 是否有副作用文件输出。
+- 是否能由 extension 注册。
 
-### 3.1 常用内置命令
+## 16.4 Settings、Model 与 Auth 命令
 
-```typescript
-// packages/coding-agent/src/core/slash-commands.ts
-export const BUILTIN_COMMANDS: Command[] = [
-  {
-    name: 'help',
-    description: 'Show available commands',
-    type: 'local',
-    execute: async () => ({ output: 'Available commands...' }),
-  },
-  {
-    name: 'compact',
-    description: 'Manually trigger context compaction',
-    type: 'prompt',
-    execute: async (args, ctx) => ({
-      injectMessage: `/compact ${args.join(' ')}`,
-    }),
-  },
-  {
-    name: 'clear',
-    description: 'Clear conversation history',
-    type: 'local',
-    execute: async () => ({ clearContext: true }),
-  },
-  {
-    name: 'config',
-    description: 'Open config editor',
-    type: 'local-jsx',
-    execute: async () => ({ openModal: 'config' }),
-  },
-]
-```
+`/settings` 改变 thinking level、theme、message delivery、transport 等产品设置。settings 持久化由 `SettingsManager` 管理，相关文件操作可从 [settings-manager.ts#L308](/source-code/packages/coding-agent/src/core/settings-manager.ts#L308) 附近阅读。
 
----
+`/model` 和 `/login` 依赖 `ModelRegistry` 与 auth storage。模型注册表从 [model-registry.ts#L335](/source-code/packages/coding-agent/src/core/model-registry.ts#L335) 开始，认证和请求 headers 解析在 [model-registry.ts#L685](/source-code/packages/coding-agent/src/core/model-registry.ts#L685)。这说明命令系统不是 UI 菜单，而是产品状态入口。
 
-## 4. 自定义命令
+## 16.5 用户命令完整语义
 
-### 4.1 Markdown 命令格式
+从用户视角，docs/usage.md 覆盖的命令可以按结果分类：
 
-```markdown
----
-name: my-command
-description: Does something useful
-args:
-  - name: arg1
-    description: First argument
-    required: true
-  - name: arg2
-    description: Second argument
-    required: false
----
+- 状态选择：`/settings`、`/model`、`/scoped-models`、`/login`、`/logout`。
+- 会话管理：`/session`、`/resume`、`/new`、`/fork`、`/clone`、`/tree`、`/name`。
+- 上下文治理：`/compact`，以及 settings 中的 auto compaction。
+- 导入导出：`/export`、`/import`、`/share`、`/copy`。
+- 信息面板：`/hotkeys`、`/changelog`。
+- 运行时刷新与退出：`/reload`、`/quit`。
 
-# My Command
+interactive mode 中这些命令大多不是在一个 switch 里结束，而是打开 overlay、调用 runtimeHost、读写 session、调用 clipboard 或导出 HTML。比如 `/export` 处理从 [interactive-mode.ts#L4948](/source-code/packages/coding-agent/src/modes/interactive/interactive-mode.ts#L4948) 开始；`/copy` 读取最后一条 agent 文本并写入剪贴板，见 [interactive-mode.ts#L5139](/source-code/packages/coding-agent/src/modes/interactive/interactive-mode.ts#L5139)；`/hotkeys` 生成快捷键说明，见 [interactive-mode.ts#L5276](/source-code/packages/coding-agent/src/modes/interactive/interactive-mode.ts#L5276)；`/tree` 打开会话树选择器，见 [interactive-mode.ts#L4253](/source-code/packages/coding-agent/src/modes/interactive/interactive-mode.ts#L4253)。
 
-This command does something useful.
+CLI 也有对应入口。参数解析在 [args.ts#L59](/source-code/packages/coding-agent/src/cli/args.ts#L59)，帮助文本从 [args.ts#L191](/source-code/packages/coding-agent/src/cli/args.ts#L191) 开始。重要参数包括：
 
-Usage: `/my-command <arg1> [arg2]`
-```
+- `--model`、`--provider`、`--thinking`、`--models`：模型与循环范围。
+- `--resume`、`--continue`、`--session`、`--fork`：会话入口。
+- `--print`、`--json`、`--rpc`：运行模式。
+- `--extension`、`--skill`、`--prompt-template`、`--theme` 及对应 `--no-*`：资源加载。
+- `--export`、`--list-models`：无需进入完整交互 UI 的操作。
 
-### 4.2 命令解析
+这就是为什么 book 必须把 slash command、CLI args、SDK/RPC 分开讲：同一个产品能力可以有多个入口，但最终应落到同一套 session/runtime 方法。
 
-```typescript
-// packages/coding-agent/src/core/slash-commands.ts
-export function parseCommandFromMarkdown(
-  content: string,
-): Command {
-  const { data, content: body } = parseFrontmatter(content)
+## 16.6 环境变量和资源开关
 
-  return {
-    name: data.name,
-    description: data.description,
-    type: determineCommandType(data),
-    execute: createExecutor(data, body),
-  }
-}
-```
+usage docs 里的环境变量不是附录细节。`PI_SKIP_VERSION_CHECK`、`PI_TELEMETRY`、`PI_CACHE_RETENTION`、`PI_SHARE_VIEWER_URL`、`VISUAL`、`EDITOR`、provider API keys 都会改变运行时行为。复刻时至少要把环境变量分成四类：
 
----
+- provider credential：影响模型可用性。
+- product behavior：影响更新检查、telemetry、share viewer。
+- editor/terminal integration：影响外部编辑器和 shell 行为。
+- cache/session retention：影响磁盘清理和恢复能力。
 
-## 5. 命令执行
+资源开关也同样重要。`--no-skills`、`--no-prompt-templates`、`--no-themes`、`--no-extensions` 让用户能在排错或安全模式下逐层关闭能力。这是 agent 产品可维护性的关键，不是高级功能。
 
-### 5.1 执行流程
+## 16.7 复刻原则
 
-```typescript
-// packages/coding-agent/src/core/slash-commands.ts
-export async function executeCommand(
-  input: string,
-  context: CommandContext,
-): Promise<CommandResult> {
-  // 1. 解析命令名和参数
-  const { name, args } = parseCommandInput(input)
+MVP：实现 `/model`、`/session`、`/compact`、`/export`、`/resume`、`/reload`、`/help`。
 
-  // 2. 查找命令
-  const command = findCommand(name)
-  if (!command) {
-    throw new Error(`Unknown command: ${name}`)
-  }
-
-  // 3. 验证参数
-  validateArgs(command, args)
-
-  // 4. 执行
-  return command.execute(args, context)
-}
-```
-
----
-
-> **下一步阅读**：[第15章 Skills 与 Plugins](./chapter-15-skills-and-plugins.md) — 能力打包。
+生产级：内置/extension/resource 命令统一补全；命令可声明 idle/streaming 语义；命令错误进入 UI/RPC；命令可打开 TUI overlay；命令可由 SDK/RPC 触发；命令列表可查询。

@@ -2,7 +2,7 @@
 <!DOCTYPE html>
 <html xmlns="http://www.w3.org/1999/xhtml">
 <head>
-  <title>第22章 面试速查</title>
+  <title>第22章 AgentHarness 专家速查</title>
   <style>
     body { font-family: 'Noto Sans SC', sans-serif; line-height: 1.8; margin: 1em; }
     h1, h2, h3, h4 { color: #333; }
@@ -16,21 +16,16 @@
   </style>
 </head>
 <body>
-<p><h1>第22章 面试速查</h1></p><p>> <strong>本章目标</strong>：提供面试速查和能力证据索引。
-> <strong>阅读时间</strong>：约 90 分钟。</p><p>---</p><p><h2>1. 高频问题 30 秒版</h2></p><p><h3>1.1 Agent Loop</h3></p><p><strong>Q: Agent Loop 如何处理工具调用的并发？</strong></p><p>A: 通过 <code>isConcurrencySafe()</code> 标记只读工具（Read/Grep/Glob），它们可以并发执行；写操作工具必须串行执行。pi 使用 <code>groupToolCallsByConcurrency()</code> 分组，然后 <code>Promise.all()</code> 并发执行只读组。</p><p><h3>1.2 Context 管理</h3></p><p><strong>Q: 如何防止上下文溢出？</strong></p><p>A: pi 使用 4 阶段压缩管道：1) Snip 截断过长 tool_result；2) Microcompact 合并连续工具调用为摘要；3) Context Collapse 折叠早期对话；4) AutoCompact 完整压缩。压缩触发阈值是 80% 窗口。</p><p><h3>1.3 Tool 安全</h3></p><p><strong>Q: 如何防止危险工具调用？</strong></p><p>A: pi 使用权限流水线：1) 风险分类（低/中/高）；2) 规则匹配；3) 模式分发（6 种模式：default/acceptEdits/bypassPermissions/dontAsk/plan/auto）；4) 决策（allow/deny/ask）。Hook 的 PreToolUse 可以拦截，但必须配合权限二次校验。</p><p><h3>1.4 Memory</h3></p><p><strong>Q: 记忆系统如何避免重复提取？</strong></p><p>A: pi 使用文件系统优先策略：<code>~/.claude/projects/<slug>/memory/</code> 存储记忆，MemoryManager 缓存当前会话记忆，跨压缩边界追踪 budget。</p><p>---</p><p><h2>2. 深度问题 5 分钟版</h2></p><p><h3>2.1 如何设计一个 Agent 的压缩策略？</h3></p><p><pre><code class="language-">1. 分层降级：先 Snip → 再 Microcompact → 再 Collapse → 最后 AutoCompact
-2. 预算追踪：跨压缩边界追踪 taskBudget，记录已用 token
-3. 熔断器：连续失败 3 次进入冷却期
-4. 摘要质量：使用 LLM 生成摘要而非简单截断
-</code></pre></p><p><h3>2.2 AsyncGenerator 在 Agent 中的优势？</h3></p><p><pre><code class="language-">1. 可测试：for-await 断言事件序列
-2. 可组合：yield* 委托子 generator
-3. 可观测：每步 yield 暴露给 UI/日志
-4. 优雅退出：return 携带终态，而非抛异常
-</code></pre></p><p><h3>2.3 如何设计多租户隔离？</h3></p><p><pre><code class="language-">1. 进程级隔离：每个租户独立进程
-2. Session 隔离：每个 session 有独立 ID 和存储路径
-3. 工具隔离：租户只能访问自己目录
-4. 成本隔离：按 session 独立计费
-</code></pre></p><p>---</p><p><h2>3. 能力证据矩阵</h2></p><p><table><thead><tr><th>能力</th><th>证据</th><th>代码位置</th></tr></thead><tbody><tr><td>Agent Loop</td><td><code>runAgentLoop()</code> AsyncGenerator</td><td><code>packages/agent/src/agent-loop.ts</code></td></tr><tr><td>工具注册</td><td><code>BUILT_IN_TOOLS</code></td><td><code>packages/coding-agent/src/core/tools/index.ts</code></td></tr><tr><td>压缩管道</td><td>4 阶段压缩</td><td><code>packages/agent/src/harness/compaction/</code></td></tr><tr><td>权限系统</td><td>6 种模式</td><td><code>packages/coding-agent/src/core/exec.ts</code></td></tr><tr><td>记忆系统</td><td>MemoryManager</td><td><code>packages/agent/src/harness/session/</code></td></tr><tr><td>MCP 集成</td><td>McpClient</td><td><code>packages/coding-agent/src/core/mcp.ts</code></td></tr><tr><td>Eval</td><td>evalRunner</td><td><code>examples/mini-agent/src/evalRunner.ts</code></td></tr><tr><td>Trajectory</td><td>exportTrajectory</td><td><code>examples/mini-agent/src/exportTrajectory.ts</code></td></tr></tbody></table>
----</p><p>> <strong>下一步阅读</strong>：<a href="./chapter-23-replication-guide.md">第23章 复刻路径与检查清单</a> — 完整复刻指南。
+<p><h1>第22章 AgentHarness 专家速查</h1></p><p><h2>22.1 一句话解释 pi</h2></p><p>pi 是一个 TypeScript terminal coding harness：<code>packages/ai</code> 统一 provider 流式事件，<code>packages/agent</code> 提供 agent loop 和可嵌入 harness，<code>packages/coding-agent</code> 把它产品化为 CLI/TUI/RPC，并通过 extensions、skills、prompt templates、themes、packages 扩展。</p><p><h2>22.2 AgentSession 与 AgentHarness 的区别</h2></p><p><code>AgentSession</code> 是 pi 产品层。它知道 CLI/TUI/RPC、settings、resource loader、extensions、session manager、内置工具、auto retry、export 等产品能力。</p><p><code>AgentHarness</code> 是更通用的 runtime 层。它负责创建 turn snapshot、执行 turn、刷新 save point、管理 pending session writes、处理 queue、支持 compaction/tree、暴露 hook/event。类从 <a href="/source-code/packages/agent/src/harness/agent-harness.ts#L164">agent-harness.ts#L164</a> 开始。</p><p>自定义产品应优先理解两者边界：要复刻 pi CLI，用 <code>AgentSession</code> 思路；要做自己的 harness，用 <code>AgentHarness</code> 思路。</p><p><h2>22.3 Turn snapshot</h2></p><p>turn snapshot 是一次 LLM turn 使用的具体状态。<code>createTurnState()</code> 从 <a href="/source-code/packages/agent/src/harness/agent-harness.ts#L313">agent-harness.ts#L313</a> 开始，包含 session messages、resources、model、thinking level、active tools、system prompt、stream options 等。</p><p>设计原则：运行中的 provider request 不应被外部 setter 直接修改。配置变化可以立即更新 live config，但只在下一次 snapshot 或 save point 生效。</p><p><h2>22.4 Save point 与 pending writes</h2></p><p>save point 发生在 assistant turn 和 tool result message 完成后。<code>flushPendingSessionWrites()</code> 从 <a href="/source-code/packages/agent/src/harness/agent-harness.ts#L459">agent-harness.ts#L459</a> 开始；save point 相关逻辑在 <a href="/source-code/packages/agent/src/harness/agent-harness.ts#L496">agent-harness.ts#L496</a> 附近。</p><p>pending writes 解决的是“listener/hook 在 active operation 中想写 session”的排序问题。它们不能丢，也不能插到 agent-emitted message 前面破坏 transcript。正确做法是在 save point、settlement、failure cleanup 中按顺序 flush。</p><p><h2>22.5 Queue 与 abort</h2></p><p><code>steer()</code>、<code>followUp()</code>、<code>nextTurn()</code> 分别从 <a href="/source-code/packages/agent/src/harness/agent-harness.ts#L652">agent-harness.ts#L652</a>、<a href="/source-code/packages/agent/src/harness/agent-harness.ts#L658">agent-harness.ts#L658</a>、<a href="/source-code/packages/agent/src/harness/agent-harness.ts#L664">agent-harness.ts#L664</a> 开始。<code>abort()</code> 从 <a href="/source-code/packages/agent/src/harness/agent-harness.ts#L936">agent-harness.ts#L936</a> 开始。</p><p>steering 和 follow-up 是当前 run 的队列；nextTurn 是下一个用户 turn 前插入的消息；abort 应终止当前 run 并清理相关队列，但不能随意丢 pending session writes。</p><p><h2>22.6 Structural operations</h2></p><p>compaction 和 tree navigation 是结构性 session mutation，要求 harness idle。<code>compact()</code> 从 <a href="/source-code/packages/agent/src/harness/agent-harness.ts#L681">agent-harness.ts#L681</a> 开始，<code>navigateTree()</code> 从 <a href="/source-code/packages/agent/src/harness/agent-harness.ts#L737">agent-harness.ts#L737</a> 开始。</p><p>这个限制是为了避免一边 provider streaming，一边改变 session branch，导致上下文和持久化顺序不确定。</p><p><h2>22.7 必答源码点</h2></p><p><ul><li>Loop 入口：<a href="/source-code/packages/agent/src/agent-loop.ts#L31">agent-loop.ts#L31</a></li>
+<li>Agent 状态封装：<a href="/source-code/packages/agent/src/agent.ts#L166">agent.ts#L166</a></li>
+<li>Harness：<a href="/source-code/packages/agent/src/harness/agent-harness.ts#L164">agent-harness.ts#L164</a></li>
+<li>Product Session：<a href="/source-code/packages/coding-agent/src/core/agent-session.ts#L252">agent-session.ts#L252</a></li>
+<li>Tool factory：<a href="/source-code/packages/coding-agent/src/core/tools/index.ts#L96">tools/index.ts#L96</a></li>
+<li>SessionEntry：<a href="/source-code/packages/coding-agent/src/core/session-manager.ts#L138">session-manager.ts#L138</a></li>
+<li>Extension API：<a href="/source-code/packages/coding-agent/src/core/extensions/types.ts#L1084">types.ts#L1084</a></li>
+<li>ModelRegistry：<a href="/source-code/packages/coding-agent/src/core/model-registry.ts#L335">model-registry.ts#L335</a></li>
+</ul>
+<h2>22.8 设计红线</h2></p><p>不要把工具执行交给模型。不要让 provider payload 污染内部消息。不要丢弃 toolCall/toolResult 配对。不要把 session 做成线性数组。不要让 UI 拥有 loop。不要让 extension 直接改内部状态。不要在没有 faux provider 的情况下测试 loop。不要把安全策略写成 prompt。
 </p>
 </body>
 </html>

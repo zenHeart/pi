@@ -1,148 +1,86 @@
-# 第19章 Eval 平台实操
+# 第19章 Eval 平台实操：用 JSONL 和 faux provider 起步
 
-> **本章目标**：把 Eval 理论落到 runner、transcript、viewer 和 CI artifact。
-> **pi 源码对照**：
-> - `packages/coding-agent/examples/mini-agent/src/evalRunner.ts` — Eval Runner
-> - `packages/coding-agent/examples/mini-agent/src/viewer.ts` — Transcript Viewer
-> - `packages/coding-agent/examples/mini-agent/src/transcript.ts` — Transcript 处理
->
-> **本章结束能做什么**：能用同一份 transcript 产出结果、回放视图和失败归因。
-> **阅读时间**：约 40 分钟。
+## 19.1 最小平台目标
 
----
+最小 eval 平台只做一件事：给 agent 一个任务，记录事件，验证结果。它不需要网页、数据库或复杂标注系统。先用 JSON/RPC mode、session export、git diff 和 faux provider 构建可重复 runner。
 
-## 1. Eval 数据结构
+## 19.2 Runner 输入
 
-### 1.1 EvalCase
+一个 case 可以这样定义：
 
-```typescript
-// examples/mini-agent/src/evalRunner.ts
-export interface EvalCase {
-  id: string
-  name: string
-  description: string
-  input: string
-  expected: EvalAssertion[]
-  unacceptable?: string[]
-}
-
-export interface EvalAssertion {
-  type: 'contains' | 'regex' | 'json' | 'file_exists'
-  value: string
-  description: string
-}
-
-export interface EvalResult {
-  caseId: string
-  passed: boolean
-  score: number
-  output: string
-  assertions: AssertionResult[]
-  cost: number
-  duration: number
-}
+```yaml
+id: fix-readme-typo
+cwd: /repo
+prompt: "修复 README 里的拼写错误并运行检查"
+model: faux/success-script
+limits:
+  maxTurns: 8
+  maxCostUsd: 0.20
+expect:
+  filesChanged:
+    - README.md
+  commandPasses:
+    - npm run check
+  noDangerousCommands: true
 ```
 
----
+这个格式有三个重点：任务、限制、断言。不要把 eval 写成“模型回答包含某个字符串”。
 
-## 2. Eval Runner
+## 19.3 RPC 驱动
 
-### 2.1 核心实现
+RPC mode 从 stdin 接收 JSON command，从 stdout 输出 response 和 event。mode 实现从 [rpc-mode.ts#L51](/source-code/packages/coding-agent/src/modes/rpc/rpc-mode.ts#L51) 开始，严格 JSONL reader/writer 在 [jsonl.ts#L5](/source-code/packages/coding-agent/src/modes/rpc/jsonl.ts#L5)。命令类型从 [rpc-types.ts#L19](/source-code/packages/coding-agent/src/modes/rpc/rpc-types.ts#L19) 开始。
 
-```typescript
-// examples/mini-agent/src/evalRunner.ts
-export async function runEvalCase(
-  agent: MiniAgent,
-  evalCase: EvalCase,
-): Promise<EvalResult> {
-  const startTime = Date.now()
+eval runner 可以发送：
 
-  // 运行 Agent
-  const output = await agent.run(evalCase.input)
+- `prompt`
+- `abort`
+- `compact`
+- `get_state`
+- `get_messages`
+- `get_session_stats`
+- `export_html`
+- `fork` / `clone`
 
-  // 评估结果
-  const assertionResults: AssertionResult[] = []
-  for (const assertion of evalCase.expected) {
-    const result = await evaluateAssertion(output, assertion)
-    assertionResults.push(result)
-  }
+并订阅事件判断执行过程。
 
-  const passed = assertionResults.every(r => r.passed)
-  const score = passed ? 1 : 0
+RPC command 覆盖面比普通 “send prompt” 大。`RpcCommand` 还包括 `set_model`、`cycle_model`、`set_thinking_level`、`set_steering_mode`、`set_follow_up_mode`、`set_auto_compaction`、`set_auto_retry`、`bash`、`abort_bash`、`switch_session`、`get_last_assistant_text`、`set_session_name`、`get_commands`，见 [rpc-types.ts#L19](/source-code/packages/coding-agent/src/modes/rpc/rpc-types.ts#L19)。这让 eval 能覆盖产品级状态变化，而不是只测模型输出。
 
-  return {
-    caseId: evalCase.id,
-    passed,
-    score,
-    output,
-    assertions: assertionResults,
-    cost: agent.totalCost,
-    duration: Date.now() - startTime,
-  }
-}
-```
+一个严谨 runner 应该把 request id 贯穿进去：发送 `{ id, type }`，等待同 id response，再继续观察事件。否则多个异步命令并行时，容易把 prompt response、extension UI response 和 agent event 混淆。
 
----
+## 19.4 判定流程
 
-## 3. Transcript Viewer
+最小判定流程：
 
-### 3.1 Viewer 实现
+1. 创建临时工作区。
+2. 复制 fixture repo。
+3. 启动 pi RPC 或 SDK session。
+4. 发送 prompt。
+5. 收集 JSONL events。
+6. 等待 `agent_end` 或超时。
+7. 运行期望检查命令。
+8. 检查 git diff。
+9. 导出 session。
+10. 生成 eval report。
 
-```typescript
-// examples/mini-agent/src/viewer.ts
-export function generateTranscriptHtml(
-  transcript: TranscriptEntry[],
-): string {
-  const rows = transcript.map(entry => {
-    switch (entry.type) {
-      case 'user':
-        return `<div class="user-message">${escapeHtml(entry.data.content)}</div>`
-      case 'assistant':
-        return `<div class="assistant-message">${escapeHtml(entry.data.content)}</div>`
-      case 'tool_use':
-        return `<div class="tool-call">
-          <span class="tool-name">${entry.data.tool}</span>
-          <pre>${escapeHtml(JSON.stringify(entry.data.input))}</pre>
-        </div>`
-      case 'tool_result':
-        return `<div class="tool-result">
-          <pre>${escapeHtml(entry.data.content)}</pre>
-        </div>`
-    }
-  }).join('\n')
+真实 provider eval 和 faux provider regression 要分开。前者评估能力，后者保护 harness 行为不退化。
 
-  return `<!DOCTYPE html>
-<html>
-<head><title>Transcript Viewer</title>
-<style>${VIEWER_CSS}</style></head>
-<body>${rows}</body>
-</html>`
-}
-```
+当 case 涉及 extension UI，runner 要实现一层 UI policy：看到 `extension_ui_request` 后，根据 case 配置返回 `extension_ui_response`。例如 select 默认选第一项，confirm 根据 case 写死 true/false，editor 返回预设文本，notify/status/widget 只记录不回复。这样同一套 extension 可以在 interactive mode 和 RPC eval 中运行。
 
----
+## 19.5 失败分类
 
-## 4. CI 集成
+eval report 至少区分：
 
-### 4.1 Regression Gate
+- model failed：模型没找到正确方案。
+- tool failed：工具实现或环境失败。
+- harness failed：事件、session、queue、abort、retry 语义错误。
+- context failed：必要信息没进入模型。
+- budget failed：token/cost/turn 超限。
+- safety failed：危险命令或越权路径。
 
-```typescript
-// examples/mini-agent/src/evalRunner.ts
-export async function runRegressionGate(
-  results: EvalResult[],
-  threshold: number = 0.8,
-): Promise<boolean> {
-  const passedRate = results.filter(r => r.passed).length / results.length
+只有分类清楚，eval 才能指导工程修复。
 
-  if (passedRate < threshold) {
-    console.error(`Regression: ${passedRate * 100}% < ${threshold * 100}%`)
-    return false
-  }
+## 19.6 复刻原则
 
-  return true
-}
-```
+MVP：本地 YAML cases、RPC runner、JSONL trace、git diff/assert command。
 
----
-
-> **下一步阅读**：[第20章 部署与运维](./chapter-20-deployment-and-ops.md) — 容器化部署。
+生产级：case registry、parallel execution、provider matrix、faux provider scripts、failure triage、redaction、HTML report、session dataset export。

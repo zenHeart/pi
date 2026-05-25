@@ -18,8 +18,8 @@ const OUTPUT_DIR = join(__dirname, 'epub-content');
 const BOOK_DIR = join(__dirname);
 
 const CHAPTER_ORDER = [
-  { id: 'ch00', file: 'chapter-00-prerequisites.md', title: '第0章 前置知识' },
-  { id: 'ch01', file: 'chapter-01-architecture-overview.md', title: '第1章 架构总览' },
+  { id: 'ch00', file: 'chapter-00-prerequisites.md', title: '第0章 前端工程师前置知识' },
+  { id: 'ch01', file: 'chapter-01-architecture-overview.md', title: '第1章 pi 用户旅程与产品架构' },
   { id: 'ch02', file: 'chapter-02-agent-loop.md', title: '第2章 Agent Loop' },
   { id: 'ch03', file: 'chapter-03-tools.md', title: '第3章 Tools' },
   { id: 'ch04', file: 'chapter-04-streaming-api-client.md', title: '第4章 Streaming API Client' },
@@ -31,16 +31,16 @@ const CHAPTER_ORDER = [
   { id: 'ch10', file: 'chapter-10-extension-system.md', title: '第10章 扩展系统' },
   { id: 'ch11', file: 'chapter-11-memory.md', title: '第11章 记忆系统' },
   { id: 'ch12', file: 'chapter-12-session-resume.md', title: '第12章 Session Resume' },
-  { id: 'ch13', file: 'chapter-13-mcp-protocol.md', title: '第13章 MCP 协议' },
+  { id: 'ch13', file: 'chapter-13-mcp-protocol.md', title: '第13章 MCP 协议接入策略' },
   { id: 'ch14', file: 'chapter-14-session-management.md', title: '第14章 Session 管理' },
-  { id: 'ch15', file: 'chapter-15-skills-and-plugins.md', title: '第15章 Skills 系统' },
+  { id: 'ch15', file: 'chapter-15-skills-and-plugins.md', title: '第15章 Skills、Prompt Templates、Themes 与 Packages' },
   { id: 'ch16', file: 'chapter-16-slash-commands.md', title: '第16章 Slash Commands' },
-  { id: 'ch17', file: 'chapter-17-output-styles.md', title: '第17章 Output Styles' },
+  { id: 'ch17', file: 'chapter-17-output-styles.md', title: '第17章 输出风格、TUI 与渲染扩展' },
   { id: 'ch18', file: 'chapter-18-eval-and-observability.md', title: '第18章 Eval 与可观测性' },
   { id: 'ch19', file: 'chapter-19-eval-platform-hands-on.md', title: '第19章 Eval 平台实操' },
   { id: 'ch20', file: 'chapter-20-deployment-and-ops.md', title: '第20章 部署与运维' },
   { id: 'ch21', file: 'chapter-21-rl-integration.md', title: '第21章 RL 集成蓝图' },
-  { id: 'ch22', file: 'chapter-22-interview-cheatsheet.md', title: '第22章 面试速查' },
+  { id: 'ch22', file: 'chapter-22-interview-cheatsheet.md', title: '第22章 AgentHarness 专家速查' },
   { id: 'ch23', file: 'chapter-23-replication-guide.md', title: '第23章 复刻路径与检查清单' },
 ];
 
@@ -107,7 +107,7 @@ function generateTocXhtml() {
     <meta name="dtb:totalPageCount" content="0"/>
     <meta name="dtb:maxPageNumber" content="0"/>
   </head>
-  <docTitle><text>Pi Agent 实战：从源码到复刻</text></docTitle>
+  <docTitle><text>Pi Agent 实战：从使用到复刻</text></docTitle>
   <navMap>
 `;
 
@@ -138,8 +138,8 @@ function generateContentOpf() {
 <package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookId" version="3.0">
   <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
     <dc:identifier id="BookId">pi-agent-book</dc:identifier>
-    <dc:title>Pi Agent 实战：从源码到复刻</dc:title>
-    <dc:creator>Pi Agent 团队</dc:creator>
+    <dc:title>Pi Agent 实战：从使用到复刻</dc:title>
+    <dc:creator>Pi Agent Handbook</dc:creator>
     <dc:language>zh-CN</dc:language>
     <meta property="dcterms:modified">2026-05-25T00:00:00Z</meta>
   </metadata>

@@ -1,140 +1,54 @@
 # 第20章 部署与运维
 
-> **本章目标**：解释容器化与运维的最佳实践。
-> **pi 源码对照**：
-> - `packages/coding-agent/src/main.ts` — 主程序入口
->
-> **本章结束能做什么**：能设计 Docker 部署方案。
-> **阅读时间**：约 35 分钟。
+## 20.1 pi 的部署形态
 
----
+pi 是本地 CLI。常见部署不是把它变成服务，而是通过 npm/curl/bun 等方式安装，在本地项目目录运行，读取本地配置和 credentials。服务化 agent 是另一个产品形态，需要重新设计 workspace、sandbox、credential broker、quota、audit log。
 
-## 1. 容器化
+## 20.2 安装安全
 
-### 1.1 Dockerfile
+仓库开发规则强调 supply-chain hardening：依赖 pinned，安装用 `--ignore-scripts`，CI 用 `npm ci --ignore-scripts`，发布包带 shrinkwrap。对 agent 产品来说，这不是附加要求。extensions 和 packages 能执行本地代码，依赖链就是安全边界。
 
-```dockerfile
-FROM node:22-alpine AS builder
+复刻时要把 npm dependency、package install、extension load 都当作代码执行风险。
 
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci
+## 20.3 配置目录
 
-COPY . .
-RUN npm run build
+pi 默认使用 `~/.pi/agent`，可通过环境变量覆盖配置、session、package 目录。项目级 `.pi` 可以覆盖资源和 settings。settings manager 负责全局和项目 settings 的加载、迁移和写入，相关读写逻辑从 [settings-manager.ts#L308](/source-code/packages/coding-agent/src/core/settings-manager.ts#L308) 开始。
 
-FROM node:22-alpine AS runner
+运维上要回答：
 
-WORKDIR /app
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/node_modules ./node_modules
-COPY package*.json ./
+- 配置放哪里。
+- credentials 如何存储和刷新。
+- session 如何清理和备份。
+- packages 如何升级。
+- offline 模式如何工作。
+- telemetry/update check 是否可关闭。
 
-ENV NODE_ENV=production
-ENV ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+usage docs 还覆盖了平台配置细节：Windows 上需要可用的 bash 环境；Termux 需要移动端终端兼容配置；tmux 中某些组合键依赖 `csi-u`；terminal-setup 文档解释了 Shift+Enter、Ctrl+Enter、Alt+Enter 在不同 terminal 里的差异。运维文档必须写这些，因为 pi 的交互质量依赖 terminal input，而不是只依赖 Node.js 运行时。
 
-ENTRYPOINT ["node", "dist/main.js"]
-CMD ["--help"]
-```
+复刻时建议把平台要求分成三层：
 
----
+- 必需：Node/Bun 运行时、可写配置目录、可执行 shell、provider credential。
+- 推荐：支持 bracketed paste、多行输入、图片协议、现代 key encoding 的终端。
+- 可选：tmux 配置、外部编辑器、shell alias、团队共享 `.pi`。
 
-## 2. 健康检查
+这样用户遇到快捷键或 shell 问题时，能判断是 agent 逻辑、终端兼容还是本地环境问题。
 
-### 2.1 Health Check 端点
+## 20.4 Providers 运维
 
-```typescript
-// packages/coding-agent/src/main.ts
-export function setupHealthCheck(server: HttpServer): void {
-  server.get('/health', async (req, res) => {
-    const status = {
-      status: 'ok',
-      uptime: process.uptime(),
-      version: VERSION,
-      sessionCount: sessionManager.size(),
-    }
-    res.json(status)
-  })
+provider 运维包括 API key、OAuth、cloud provider、custom models、models.json、proxy、retry、rate limit。`ModelRegistry` 负责加载 built-in 和 custom models，见 [model-registry.ts#L384](/source-code/packages/coding-agent/src/core/model-registry.ts#L384)；请求 auth 解析在 [model-registry.ts#L685](/source-code/packages/coding-agent/src/core/model-registry.ts#L685)。
 
-  server.get('/ready', async (req, res) => {
-    // 检查 API key 是否配置
-    if (!process.env.ANTHROPIC_API_KEY) {
-      res.status(503).json({ ready: false, reason: 'API key not configured' })
-      return
-    }
-    res.json({ ready: true })
-  })
-}
-```
+生产环境不要把 key 写进 prompt 或日志。auth storage、环境变量、models.json command resolver、OAuth refresh 都应该有明确优先级。
 
----
+## 20.5 本地、团队与服务化
 
-## 3. 信号处理
+个人 CLI：简单安装、透明配置、session 可导出、工具直接操作本地 repo。
 
-### 3.1 Graceful Shutdown
+团队 CLI：统一 context files、共享 packages、审计 extensions、限制工具、标准化 provider、固定检查命令。
 
-```typescript
-// packages/coding-agent/src/main.ts
-export function setupSignalHandlers(): void {
-  const shutdown = async (signal: string) => {
-    console.log(`Received ${signal}, shutting down gracefully...`)
+服务化 agent：隔离 workspace、远程 shell、credential broker、job queue、quota、audit、artifact storage、multi-tenant auth。这个形态不能直接复用本地 CLI 的安全假设。
 
-    // 停止接收新请求
-    server.close()
+## 20.6 复刻原则
 
-    // 保存活跃 session
-    await sessionManager.saveAll()
+MVP：npm package、config dir、auth file、session dir、basic update story。
 
-    // 刷新待处理的 transcript
-    await transcriptManager.flush()
-
-    process.exit(0)
-  }
-
-  process.on('SIGTERM', () => shutdown('SIGTERM'))
-  process.on('SIGINT', () => shutdown('SIGINT'))
-}
-```
-
----
-
-## 4. 日志与监控
-
-### 4.1 结构化日志
-
-```typescript
-// packages/coding-agent/src/core/telemetry.ts
-export interface LogEntry {
-  timestamp: string
-  level: 'debug' | 'info' | 'warn' | 'error'
-  service: string
-  traceId?: string
-  message: string
-  attributes?: Record<string, unknown>
-}
-
-export function log(
-  level: LogEntry['level'],
-  message: string,
-  attributes?: Record<string, unknown>,
-): void {
-  const entry: LogEntry = {
-    timestamp: new Date().toISOString(),
-    level,
-    service: 'pi-agent',
-    traceId: getCurrentTraceId(),
-    message,
-    attributes,
-  }
-
-  if (level === 'error') {
-    console.error(JSON.stringify(entry))
-  } else {
-    console.log(JSON.stringify(entry))
-  }
-}
-```
-
----
-
-> **下一步阅读**：[第21章 RL 集成蓝图](./chapter-21-rl-integration.md) — 强化学习对接。
+生产级：lockfile/shrinkwrap、ignore scripts、package trust policy、offline mode、config migration、credential refresh、provider retry cap、workspace isolation、ops docs。

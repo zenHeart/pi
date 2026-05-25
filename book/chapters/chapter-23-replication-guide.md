@@ -1,152 +1,105 @@
 # 第23章 复刻路径与检查清单
 
-> **本章目标**：提供从零复刻 Pi Agent 的完整路线图和检查清单。
-> **阅读时间**：约 60 分钟。
+## 23.1 目标定义
 
----
+复刻 pi-agent 产品能力，不是复制终端界面，而是实现同类能力边界：用户能在项目目录启动 agent，模型能读写文件和跑命令，过程可恢复，能力可扩展，长会话可压缩，外部程序可通过 SDK/RPC/JSON 集成，团队可以通过资源和 packages 共享工作流。
 
-## 1. 复刻路线图
+## 23.2 四周 MVP 路线
 
-### 阶段 1：最小可运行 Agent（1 周）
+第一周：消息与 loop。实现 `AgentMessage`、provider stream adapter、assistant reducer、toolCall/toolResult 闭环、abort、错误消息、事件流、faux provider。
 
-**目标**：运行一个能处理简单任务的 Agent。
+第二周：工具与 session。实现 read/write/edit/bash，JSONL append session，id/parentId，resume，session stats，HTML/JSONL export。
 
-| 步骤 | 任务 | 检查点 |
-|------|------|--------|
-| 1.1 | 搭建 TypeScript 项目 | `npm init` + TypeScript 配置完成 |
-| 1.2 | 实现 Agent Loop | AsyncGenerator 状态机跑通 |
-| 1.3 | 实现 Read/Bash/Edit 工具 | 三个工具正确执行 |
-| 1.4 | 接入 Claude API | 流式响应正常接收 |
-| 1.5 | 实现工具调用闭环 | tool_use → tool_result 完整循环 |
+第三周：上下文与预算。实现 context files、system prompt builder、tool output truncation、manual compact、context usage、provider/model/auth registry。
 
-### 阶段 2：核心能力（2 周）
+第四周：产品化与扩展。实现 slash commands、settings、skills、prompt templates、extension loader、registerTool/registerCommand、RPC JSONL、SDK wrapper。
 
-| 步骤 | 任务 | 检查点 |
-|------|------|--------|
-| 2.1 | 实现压缩管道 | Snip/Microcompact 正确工作 |
-| 2.2 | 添加 System Prompt | 分模块构建，缓存边界正确 |
-| 2.3 | 实现权限检查 | allow/deny/ask 决策正确 |
-| 2.4 | 添加 CLAUDE.md 加载 | 项目级规则生效 |
-| 2.5 | 实现 Session Resume | 重启后恢复对话 |
+## 23.3 生产级补齐
 
-### 阶段 3：扩展生态（2 周）
+生产级需要继续补：
 
-| 步骤 | 任务 | 检查点 |
-|------|------|--------|
-| 3.1 | 实现 MCP 接入 | 外部 MCP Server 工具可用 |
-| 3.2 | 实现 Slash Commands | `/help` `/compact` 等内置命令 |
-| 3.3 | 实现 Skills 系统 | Skill 按需加载 |
-| 3.4 | 实现 Hook 系统 | PreToolUse/PostToolUse 生效 |
-| 3.5 | 实现 Sub-agent | 任务委派独立执行 |
+- grep/find/ls 和工具 allowlist。
+- custom provider、models.json、OAuth。
+- packages、themes、keybindings、terminal compatibility、platform setup。
+- full extension lifecycle、custom UI、message renderer。
+- fork/clone/tree、branch summary、auto compaction。
+- auto retry、provider retry cap、overflow recovery。
+- observability、eval runner、RPC extension UI policy、redaction、dataset export。
+- sandbox/remote execution、checkpoint、安全审批。
 
-### 阶段 4：工程化（1 周）
+## 23.4 自定义 AgentHarness 检查表
 
-| 步骤 | 任务 | 检查点 |
-|------|------|--------|
-| 4.1 | 实现 Eval Runner | 测试用例执行并产出报告 |
-| 4.2 | 实现 Transcript Viewer | HTML 可视化正常 |
-| 4.3 | 添加 Docker 支持 | 容器化部署成功 |
-| 4.4 | 添加健康检查 | `/health` `/ready` 正常 |
-| 4.5 | 实现 Graceful Shutdown | SIGTERM 信号处理正确 |
+- 是否有 turn snapshot，避免运行中 provider request 被 live config 污染。
+- 是否有 save point，保证工具结果、pending writes、下一轮配置刷新顺序确定。
+- 是否有 append-only session storage。
+- 是否能传入自定义 model registry 和 credential resolver。
+- 是否能注册、覆盖、切换 active tools。
+- 是否支持 steering、followUp、nextTurn。
+- 是否支持 abort 并定义 queue/pending write 行为。
+- 是否支持 compaction 和 tree navigation，或明确不支持。
+- 是否有 hook/event settlement 策略。
+- 是否有 faux provider 测试。
+- 是否区分 internal message、provider message、UI message、session entry。
 
----
+## 23.5 用户功能覆盖检查表
 
-## 2. 完整检查清单
+- 安装、卸载、配置目录、环境变量。
+- `/login`、provider、model、thinking level。
+- interactive mode、print mode、JSON mode、RPC mode。
+- read/write/edit/bash、只读工具集。
+- `@file`、图片、`!command`、`!!command`。
+- context files、SYSTEM、APPEND_SYSTEM。
+- `/resume`、`-c`、`-r`、`--session`、`/new`。
+- `/tree`、`/fork`、`/clone`、label。
+- `/compact`、auto compaction、branch summary。
+- `/export` HTML/JSONL、`/import`、`/share`、`/copy`、session stats。
+- `/hotkeys`、`/changelog`、`/quit`。
+- skills、prompt templates、themes、packages。
+- extensions、custom tools、custom UI、custom provider。
+- settings、keybindings、terminal setup。
+- `--skill`、`--prompt-template`、`--theme`、`--extension` 以及 `--no-*` 安全排错开关。
+- Windows bash、Termux、tmux `csi-u`、外部编辑器。
 
-### 2.1 Agent Loop ✓
+## 23.6 Docs 映射覆盖检查表
 
-- [ ] AsyncGenerator 模式实现
-- [ ] 9 条退出路径覆盖
-- [ ] 状态机原子替换
-- [ ] 并发工具分组执行
-- [ ] 熔断器保护
+对照 `packages/agent/docs` 与 `packages/coding-agent/docs`，本书必须覆盖：
 
-### 2.2 工具系统 ✓
+- AgentHarness：turn lifecycle、tool loop、events、hooks、snapshot、pending writes、save point。
+- DurableHarness：append-only storage、resume、session tree、fork/clone、branch summary。
+- Hooks：before/after provider、tool、context、resources_discover、mutation 合约、错误隔离。
+- Observability：event/trace/span/metric/redaction、JSONL、eval facts。
+- Usage：CLI args、slash commands、modes、resources、env vars、terminal flows。
+- Compaction：manual/auto compaction、reserve/keep recent、split turns、extension before compact/tree hooks。
+- Extensions：registerTool、registerCommand、registerShortcut、registerFlag、registerProvider、UI、custom renderer。
+- Custom provider：API types、models.json、OAuth、headers、streamSimple、usage/cost、overflow、tests。
+- SDK/RPC：createAgentSession、runtime/services、print/json/rpc modes、RPC command/response/UI request。
+- TUI：component interface、overlay、focus、IME、widgets、footer/header、custom editor、themes、keybindings。
+- MCP：server config、resources/tools/prompts、security boundary。
+- Platform docs：Windows、tmux、terminal setup、Termux、shell aliases。
 
-- [ ] Read 工具（支持 offset/limit）
-- [ ] Bash 工具（超时控制）
-- [ ] Edit 工具（精确替换）
-- [ ] Write 工具
-- [ ] Zod 输入校验
-- [ ] 工具注册表
+## 23.7 设计决策检查表
 
-### 2.3 上下文管理 ✓
+每加一个能力，回答八个问题：
 
-- [ ] Token 估算
-- [ ] 4 阶段压缩管道
-- [ ] Snip 截断
-- [ ] Microcompact 合并
-- [ ] 预算跨压缩追踪
+1. 它解决哪个用户问题。
+2. 它属于核心、产品层、扩展还是外部环境。
+3. 用户如何触发。
+4. 模型能看到什么。
+5. harness 私下保存什么。
+6. 副作用在哪里执行。
+7. 结果如何回灌。
+8. 失败如何持久化和展示。
 
-### 2.4 权限与安全 ✓
+这八个问题能防止你把 agent 写成一堆 prompt 和工具函数。
 
-- [ ] 6 种权限模式
-- [ ] 风险分类
-- [ ] 破坏性命令检测
-- [ ] 提示注入防御
-- [ ] Hook 与权限协作
+## 23.8 最终判断标准
 
-### 2.5 记忆与持久化 ✓
+一个工程师只看本书后，应能做到：
 
-- [ ] CLAUDE.md 加载
-- [ ] 记忆提取与存储
-- [ ] Session Resume
-- [ ] JSONL Transcript
-- [ ] Sidechain 子 Agent
+- 从用户视角完整使用 pi。
+- 从源码视角解释 loop、tools、provider、session、extensions、resources。
+- 从工程视角实现一个最小 coding agent。
+- 从产品视角判断哪些能力该进核心，哪些该做扩展。
+- 从 harness 视角设计 snapshot、save point、pending writes、queue、abort 和 recovery。
 
-### 2.6 扩展系统 ✓
-
-- [ ] MCP Client
-- [ ] Slash Commands
-- [ ] Skills 系统
-- [ ] Hook 系统（27 个注入点）
-- [ ] Sub-agent 委派
-
-### 2.7 Eval 与可观测性 ✓
-
-- [ ] Trace 事件
-- [ ] 失败归因
-- [ ] Eval Runner
-- [ ] Transcript Viewer
-- [ ] 成本追踪
-
-### 2.8 运维 ✓
-
-- [ ] Docker 部署
-- [ ] Health Check
-- [ ] Graceful Shutdown
-- [ ] 结构化日志
-
----
-
-## 3. 与 pi 源码的差距评估
-
-| 模块 | pi 实现 | 复刻优先级 | 难度 |
-|------|---------|-----------|------|
-| Agent Loop | `packages/agent/src/agent-loop.ts` | 必须 | 高 |
-| 工具系统 | `packages/coding-agent/src/core/tools/` | 必须 | 中 |
-| 压缩管道 | `packages/agent/src/harness/compaction/` | 必须 | 高 |
-| 权限系统 | `packages/coding-agent/src/core/exec.ts` | 必须 | 高 |
-| 记忆系统 | `packages/agent/src/harness/session/memory-*` | 应该 | 中 |
-| MCP | `packages/coding-agent/src/core/mcp.ts` | 应该 | 中 |
-| Slash Commands | `packages/coding-agent/src/core/slash-commands.ts` | 应该 | 低 |
-| Skills | `packages/coding-agent/src/core/skills.ts` | 应该 | 中 |
-| Hook 系统 | `packages/coding-agent/src/core/extensions/` | 可选 | 高 |
-| Sub-agent | `packages/coding-agent/src/core/modes/rpc/` | 可选 | 高 |
-| Eval Runner | `examples/mini-agent/src/evalRunner.ts` | 必须 | 中 |
-| Docker | Dockerfile | 应该 | 低 |
-
----
-
-## 4. 下一步
-
-恭喜完成本书！下一步可以：
-
-1. **深入 pi 源码**：阅读 `packages/` 下的具体实现
-2. **运行 mini-agent**：参照 `examples/mini-agent/` 构建
-3. **参与贡献**：查看 pi 的 `CONTRIBUTING.md`
-4. **构建自己的 Agent**：基于本书知识设计
-
----
-
-_全书完。感谢阅读！_
+达到这些标准，才算真正理解 pi agent，而不是只会调用一次模型 API。

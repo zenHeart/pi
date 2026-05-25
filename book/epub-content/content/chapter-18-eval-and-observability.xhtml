@@ -16,73 +16,32 @@
   </style>
 </head>
 <body>
-<p><h1>第18章 Eval 与可观测性</h1></p><p>> <strong>本章目标</strong>：解释如何评估 Agent 是否真的完成任务。
-> <strong>pi 源码对照</strong>：
-> - <code>packages/coding-agent/src/core/telemetry.ts</code> — 遥测
-> - <code>packages/agent/test/</code> — 测试目录
->
-> <strong>本章结束能做什么</strong>：能设计覆盖 unit/integration/e2e 的评测和观测指标。
-> <strong>阅读时间</strong>：约 25 分钟。</p><p>---</p><p><h2>1. Eval 三层体系</h2></p><p><pre><code class="language-">┌─────────────────────────────────────────┐
-│ E2E 层 - 用户价值                       │
-│ - 用户采纳率                            │
-│ - 节省时间                              │
-│ - 人工接管率                            │
-├─────────────────────────────────────────┤
-│ 集成层 - 任务完成                       │
-│ - 端到端完成率                         │
-│ - 多步准确性                            │
-│ - 工具链执行准确性                      │
-├─────────────────────────────────────────┤
-│ 单元层 - 原子能力                       │
-│ - 工具参数正确性                        │
-│ - 输出格式稳定性                        │
-│ - 上下文选择效率                        │
-└─────────────────────────────────────────┘
-</code></pre></p><p>---</p><p><h2>2. Trace 设计</h2></p><p><h3>2.1 Trace Entry</h3></p><p><pre><code class="language-typescript">// packages/coding-agent/src/core/telemetry.ts
-export interface TraceEntry {
-  type: 'span' | 'event' | 'metric'
-  timestamp: number
-  traceId: string
-  spanId?: string
-  parentSpanId?: string
-  name: string
-  duration?: number
-  attributes: Record<string, unknown>
-}
-</code></pre></p><p><h3>2.2 关键 Trace 事件</h3></p><p><table><thead><tr><th>事件</th><th>属性</th></tr></thead><tbody><tr><td><code>agent.turn.start</code></td><td>turnCount, model</td></tr><tr><td><code>agent.tool.call</code></td><td>toolName, toolInput</td></tr><tr><td><code>agent.tool.result</code></td><td>toolName, success, duration</td></tr><tr><td><code>agent.api.request</code></td><td>model, inputTokens, outputTokens</td></tr><tr><td><code>agent.api.response</code></td><td>stopReason, cost</td></tr></tbody></table>
----</p><p><h2>3. 失败归因</h2></p><p><h3>3.1 五类失败</h3></p><p><table><thead><tr><th>类别</th><th>说明</th><th>例子</th></tr></thead><tbody><tr><td><code>model_error</code></td><td>模型决策错误</td><td>选了错误工具</td></tr><tr><td><code>tool_error</code></td><td>工具执行失败</td><td>bash 超时</td></tr><tr><td><code>context_error</code></td><td>上下文超限</td><td>prompt_too_long</td></tr><tr><td><code>permission_error</code></td><td>权限被拒</td><td>权限流水线拒绝</td></tr><tr><td><code>unknown_error</code></td><td>未知错误</td><td>异常</td></tr></tbody></table>
-<h3>3.2 归因逻辑</h3></p><p><pre><code class="language-typescript">// packages/coding-agent/src/core/telemetry.ts
-export function classifyFailure(
-  error: Error,
-  context: ExecutionContext,
-): FailureCategory {
-  if (error instanceof ToolError) {
-    return 'tool_error'
-  }
-  if (error instanceof PermissionError) {
-    return 'permission_error'
-  }
-  if (error instanceof ContextOverflowError) {
-    return 'context_error'
-  }
-  if (error instanceof ModelError) {
-    return 'model_error'
-  }
-  return 'unknown_error'
-}
-</code></pre></p><p>---</p><p><h2>4. 指标体系</h2></p><p><h3>4.1 核心指标</h3></p><p><pre><code class="language-typescript">// packages/coding-agent/src/core/telemetry.ts
-export interface AgentMetrics {
-  // 效率
-  avgTurnsPerTask: number
-  avgTokensPerTurn: number
-  avgCostPerTask: number</p><p>  // 质量
-  taskCompletionRate: number
-  humanTakeoverRate: number
-  toolCallSuccessRate: number</p><p>  // 延迟
-  avgApiLatency: number
-  avgToolLatency: number
-}
-</code></pre></p><p>---</p><p>> <strong>下一步阅读</strong>：<a href="./chapter-19-eval-platform-hands-on.md">第19章 Eval 平台实操</a> — 动手实践。
+<p><h1>第18章 Eval 与可观测性</h1></p><p><h2>18.1 Eval 的事实源</h2></p><p>pi 没有把完整托管 eval 平台放进仓库，但它已经具备 eval 所需的事实源：结构化事件、JSONL session、工具调用、usage/cost、HTML/JSONL export、RPC/JSON mode、faux provider 测试、session stats。eval runner 不应该解析 ANSI 终端文本，而应该消费这些结构化输出。</p><p><h2>18.2 可观测性 mental model</h2></p><p>observability docs 的目标是让 pi 能把 agent run、provider request、tool call、session mutation、extension event 变成可追踪信号。对 agent 来说，可观测性不是只有日志，还包括：</p><p><ul><li>trace：一次用户任务跨 turn、provider、tool、session 的链路。</li>
+<li>span：provider request、tool execution、compaction、export 等阶段。</li>
+<li>event：message_update、tool_execution_end、extension_error。</li>
+<li>metric：token、cost、latency、retry count、tool duration。</li>
+<li>redaction：避免 secrets、路径、用户身份泄漏。</li>
+</ul>
+<h2>18.3 事件流作为 trace</h2></p><p>低层 loop 发出结构化事件，第2章已经讲过。print mode 的 JSON 输出会把事件写成 JSON lines，见 <a href="/source-code/packages/coding-agent/src/modes/print-mode.ts#L105">print-mode.ts#L105</a>。RPC mode 也用 JSONL 协议，协议文件从 <a href="/source-code/packages/coding-agent/src/modes/rpc/rpc-types.ts#L19">rpc-types.ts#L19</a> 开始。</p><p>这让 eval runner 可以订阅：</p><p><ul><li><code>message_end</code>：最终 assistant 或 tool result。</li>
+<li><code>tool_execution_end</code>：工具结果和错误。</li>
+<li><code>compaction_end</code>：是否压缩成功。</li>
+<li><code>auto_retry_*</code>：是否发生 transient retry。</li>
+<li><code>agent_end</code>：run 是否结束。</li>
+</ul>
+RPC 不只输出 agent events，还会输出 extension UI 请求。类型从 <a href="/source-code/packages/coding-agent/src/modes/rpc/rpc-types.ts#L213">rpc-types.ts#L213</a> 开始，覆盖 select、confirm、input、editor、notify、setStatus、setWidget、setTitle、set_editor_text。对应的 UI response 类型在 <a href="/source-code/packages/coding-agent/src/modes/rpc/rpc-types.ts#L255">rpc-types.ts#L255</a>。这让 headless runner 可以在没有 TUI 的情况下处理 extension 交互。</p><p>对 eval 平台来说，这意味着 trace 至少有三类 JSONL：</p><p><ul><li>command response：某个 RPC 命令是否被接收或失败。</li>
+<li>agent/session event：模型、工具、compaction、retry 的过程事实。</li>
+<li>extension UI request/response：扩展要求用户选择或输入时的外部交互事实。</li>
+</ul>
+不要把这三类事件混成一种 “log”。它们的生命周期和断言方式不同。</p><p><h2>18.4 Faux provider</h2></p><p>测试 agent loop 不应调用真实 provider。faux provider 用脚本化 response 让测试可重复：给定上下文，返回 text 或 toolCall。这样可以稳定测试 tool loop、compaction、session tree、extension hook、retry。</p><p>复刻时要从第一天实现 fake model。没有 fake model，就无法写可靠的单元测试和回归测试，只能依赖昂贵且不稳定的真实模型。</p><p><h2>18.5 判定标准</h2></p><p>coding agent eval 不应只看最终回答。更可靠的断言包括：</p><p><ul><li>最终 git diff 是否符合预期。</li>
+<li>指定检查命令是否通过。</li>
+<li>是否读了必要文件。</li>
+<li>是否调用了危险工具。</li>
+<li>是否超过轮次/token/cost 上限。</li>
+<li>是否出现未处理错误。</li>
+<li>是否正确保存 session。</li>
+<li>是否能从 session replay 到关键状态。</li>
+</ul>
+<h2>18.6 复刻原则</h2></p><p>MVP：JSON event output、session JSONL、faux provider、工具调用断言。</p><p>生产级：trace/span/metric、redaction policy、eval cases、RPC runner、workspace diff checker、cost budget、failure taxonomy、HTML trace viewer、dataset export。
 </p>
 </body>
 </html>

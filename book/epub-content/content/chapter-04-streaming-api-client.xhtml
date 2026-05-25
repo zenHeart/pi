@@ -16,136 +16,30 @@
   </style>
 </head>
 <body>
-<p><h1>第4章 Streaming API Client：流式通信</h1></p><p>> <strong>本章目标</strong>：解释模型事件流如何驱动 Agent Loop，处理重试、fallback 和 usage。
-> <strong>pi 源码对照</strong>：
-> - <code>packages/ai/src/</code> — AI Provider 客户端
-> - <code>packages/agent/src/harness/agent-harness.ts</code> — Harness 中的 API 调用
-> - <code>packages/coding-agent/src/core/messages.ts</code> — 消息处理
->
-> <strong>本章结束能做什么</strong>：能实现一个可消费 streaming content block、可恢复错误、可记录 cost 的 API 客户端层。
-> <strong>阅读时间</strong>：约 30 分钟。</p><p>---</p><p><h2>1. API 客户端架构</h2></p><p><h3>1.1 客户端接口</h3></p><p><pre><code class="language-typescript">// packages/ai/src/client.ts
-export interface AIClient {
-  messages: {
-    create(params: MessageCreateParams): Promise<Message>
-    stream(params: MessageCreateParams): AsyncGenerator<StreamEvent>
-  }
-}
-</code></pre></p><p><h3>1.2 流式响应解析</h3></p><p>SSE 事件流 → 结构化 ContentBlock：</p><p><pre><code class="language-">event: message_start
-data: {"type":"message_start","message":{...}}</p><p>event: content_block_start
-data: {"type":"content_block_start","index":0,"content_block":{"type":"text"}}</p><p>event: content_block_delta
-data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}</p><p>event: content_block_stop
-data: {"type":"content_block_stop","index":0}</p><p>event: message_delta
-data: {"type":"message_delta","delta":{"stop_reason":"end_turn"}}</p><p>event: message_stop
-data: {"type":"message_stop"}
-</code></pre></p><p>---</p><p><h2>2. pi 的消息流</h2></p><p><h3>2.1 消息创建</h3></p><p><pre><code class="language-typescript">// packages/coding-agent/src/core/messages.ts
-export async function createMessage(
-  client: AIClient,
-  params: MessageCreateParams,
-): Promise<Message> {
-  return client.messages.create(params)
-}
-</code></pre></p><p><h3>2.2 流式消息</h3></p><p><pre><code class="language-typescript">// packages/coding-agent/src/core/messages.ts
-export async function<em> streamMessage(
-  client: AIClient,
-  params: MessageCreateParams,
-): AsyncGenerator<StreamEvent> {
-  const stream = await client.messages.stream(params)</p><p>  for await (const event of stream) {
-    yield mapEvent(event)
-  }
-}</p><p>function mapEvent(event: SDKEvent): StreamEvent {
-  switch (event.type) {
-    case 'content_block_delta':
-      if (event.delta.type === 'text_delta') {
-        return { type: 'text', text: event.delta.text }
-      }
-      if (event.delta.type === 'input_json_delta') {
-        return { type: 'tool_input', partial: event.delta.partial_json }
-      }
-      break
-    case 'content_block_start':
-      if (event.content_block.type === 'tool_use') {
-        return { type: 'tool_start', id: event.content_block.id, name: event.content_block.name }
-      }
-      break
-    case 'message_delta':
-      return { type: 'message_delta', stop_reason: event.delta.stop_reason }
-  }
-  return { type: 'unknown', event }
-}
-</code></pre></p><p>---</p><p><h2>3. 重试机制</h2></p><p><h3>3.1 重试策略</h3></p><p><pre><code class="language-typescript">// packages/ai/src/retry.ts
-export interface RetryOptions {
-  maxRetries: number
-  baseDelayMs: number
-  maxDelayMs: number
-  backoffMultiplier: number
-  retryableErrors: string[]
-}</p><p>export async function withRetry<T>(
-  operation: () => Promise<T>,
-  options: RetryOptions,
-): Promise<T> {
-  let lastError: Error</p><p>  for (let attempt = 0; attempt <= options.maxRetries; attempt++) {
-    try {
-      return await operation()
-    } catch (error) {
-      lastError = error</p><p>      if (!isRetryable(error, options.retryableErrors)) {
-        throw error
-      }</p><p>      if (attempt < options.maxRetries) {
-        const delay = Math.min(
-          options.baseDelayMs </em> Math.pow(options.backoffMultiplier, attempt),
-          options.maxDelayMs,
-        )
-        await sleep(delay)
-      }
-    }
-  }</p><p>  throw lastError!
-}
-</code></pre></p><p><h3>3.2 错误分类</h3></p><p><table><thead><tr><th>错误类型</th><th>处理策略</th><th>重试</th></tr></thead><tbody><tr><td><code>401 Unauthorized</code></td><td>刷新 token</td><td>否</td></tr><tr><td><code>429 Rate Limit</code></td><td>指数退避</td><td>是</td></tr><tr><td><code>529 Service Unavailable</code></td><td>降级到 fallback 模型</td><td>是</td></tr><tr><td><code>ECONNRESET</code></td><td>立即重试</td><td>是</td></tr><tr><td><code>Timeout</code></td><td>增加超时重试</td><td>是</td></tr></tbody></table>
----</p><p><h2>4. Usage 与成本追踪</h2></p><p><h3>4.1 Usage 记录</h3></p><p><pre><code class="language-typescript">// packages/agent/src/harness/session/session.ts
-export interface ModelUsage {
-  inputTokens: number
-  outputTokens: number
-  cacheCreationInputTokens?: number
-  cacheReadInputTokens?: number
-  totalCostUSD: number
-}</p><p>export function trackUsage(
-  session: AgentSession,
-  usage: ModelUsage,
-): void {
-  session.totalCost += usage.totalCostUSD</p><p>  if (!session.modelUsage[session.config.model]) {
-    session.modelUsage[session.config.model] = {
-      inputTokens: 0,
-      outputTokens: 0,
-      totalCostUSD: 0,
-    }
-  }</p><p>  const current = session.modelUsage[session.config.model]
-  current.inputTokens += usage.inputTokens
-  current.outputTokens += usage.outputTokens
-  current.totalCostUSD += usage.totalCostUSD
-}
-</code></pre></p><p>---</p><p><h2>5. Prompt Cache 协同</h2></p><p><h3>5.1 缓存标记</h3></p><p><pre><code class="language-typescript">// packages/ai/src/client.ts
-export function buildCachedPrompt(
-  staticContent: string,
-  dynamicContent: string,
-): { static: CachedContent, dynamic: string } {
-  return {
-    static: {
-      type: 'text',
-      text: staticContent,
-      cache_control: { type: 'ephemeral' as const },
-    },
-    dynamic: dynamicContent,
-  }
-}
-</code></pre></p><p><h3>5.2 缓存命中率追踪</h3></p><p><pre><code class="language-typescript">// packages/agent/src/harness/session/session.ts
-export function trackCacheHit(
-  session: AgentSession,
-  usage: { cache_read_input_tokens?: number },
-): void {
-  if (usage.cache_read_input_tokens) {
-    session.cacheHits += usage.cache_read_input_tokens
-  }
-}
-</code></pre></p><p>---</p><p>> <strong>下一步阅读</strong>：<a href="./chapter-05-system-prompt.md">第5章 System Prompt</a> — System Prompt 构建。
+<p><h1>第4章 Streaming API Client：把 provider 差异收敛成事件</h1></p><p><h2>4.1 为什么 provider 层必须独立</h2></p><p>不同模型供应商的协议差异很大：Anthropic Messages、OpenAI Responses、OpenAI Chat Completions、Google、Mistral、Amazon Bedrock、Codex、Copilot、Cloudflare Workers AI 都有不同的认证方式、请求字段、流式事件、tool call 增量、thinking 表达、usage 和错误格式。pi 把这些差异收敛在 <code>packages/ai</code>，对上输出统一的 assistant stream。</p><p>公共入口是 <a href="/source-code/packages/ai/src/stream.ts#L43">stream.ts#L43</a>。agent loop 不应该知道 provider 是 SSE、websocket、HTTP chunk 还是 SDK callback。它只消费统一事件。</p><p><h2>4.2 EventStream 抽象</h2></p><p>pi 的基础事件流在 <a href="/source-code/packages/ai/src/utils/event-stream.ts#L4">event-stream.ts#L4</a>，assistant 专用事件流在 <a href="/source-code/packages/ai/src/utils/event-stream.ts#L69">event-stream.ts#L69</a>。对 loop 来说，关键能力是两个：</p><p><ul><li><code>for await</code> 增量消费事件，驱动 UI 和 partial state。</li>
+<li><code>result()</code> 获取最终 assistant message，作为稳定事实进入后续处理。</li>
+</ul>
+这个抽象解决了一个常见问题：如果 provider reader 被 UI、extension 或 session 写入阻塞，就可能影响底层网络读取。pi 的设计把 provider transport reading 和上层事件消费解耦，使 harness 可以在边界处 await listener、hook 和持久化，而不把 provider stream 读坏。</p><p><h2>4.3 Provider payload 边界</h2></p><p><code>streamAssistantResponse()</code> 在发请求前做三件事：<code>transformContext</code>、<code>convertToLlm</code>、构造 provider <code>Context</code>，位置见 <a href="/source-code/packages/agent/src/agent-loop.ts#L275">agent-loop.ts#L275</a>。这说明 provider payload 是运行时边界，不是系统内部消息。</p><p>扩展可以通过 provider request hook 检查或改写 payload。<code>ExtensionRunner.emitBeforeProviderRequest()</code> 从 <a href="/source-code/packages/coding-agent/src/core/extensions/runner.ts#L890">runner.ts#L890</a> 开始。这个能力适合企业代理、审计 headers、实验性 payload 字段，但风险也高：它改的是模型实际看到的请求。</p><p><h2>4.4 认证与模型注册</h2></p><p>pi 支持订阅型 provider、API key provider、cloud provider、自定义 models.json 和 extension provider。低层 <code>Agent</code> 支持 <code>getApiKey</code>，每次 provider 请求前解析凭证，见 <a href="/source-code/packages/agent/src/agent-loop.ts#L300">agent-loop.ts#L300</a>。产品层再叠加 auth storage、OAuth、<code>/login</code>、<code>auth.json</code>、环境变量和 provider-specific headers。</p><p>设计上，模型注册和认证不能散落在 UI 或 loop 中。原因是：</p><p><ul><li><code>/model</code>、CLI <code>--model</code>、SDK、RPC 都需要同一套模型选择。</li>
+<li>provider token 可能过期，必须在请求前刷新。</li>
+<li>custom provider 可能来自 extension，需要动态注册和注销。</li>
+<li><code>--list-models</code> 要在不启动完整 TUI 的情况下工作。</li>
+</ul>
+custom provider 文档里的关键点是：pi 不是只支持 “OpenAI-compatible”。<code>Api</code> 类型列出内置协议族，包括 <code>mistral-conversations</code>、<code>openai-responses</code>、<code>azure-openai-responses</code>、<code>openai-completions</code>、<code>anthropic-messages</code>、<code>bedrock-converse-stream</code>、<code>google-generative-ai</code>、<code>google-vertex</code>、<code>opencode</code>、<code>cloudflare-workers-ai</code>，见 <a href="/source-code/packages/ai/src/types.ts#L6">types.ts#L6</a>。extension 可以调用 <code>registerProvider()</code> 注册或覆盖 provider，API 从 <a href="/source-code/packages/coding-agent/src/core/extensions/types.ts#L1292">types.ts#L1292</a> 开始，配置结构在 <a href="/source-code/packages/coding-agent/src/core/extensions/types.ts#L1318">types.ts#L1318</a>，单个模型配置在 <a href="/source-code/packages/coding-agent/src/core/extensions/types.ts#L1351">types.ts#L1351</a>。</p><p>这套配置至少覆盖这些字段：</p><p><ul><li><code>baseUrl</code>、<code>apiKey</code>、<code>headers</code>、<code>authHeader</code>：请求地址与认证。</li>
+<li><code>api</code>：选择哪个 adapter 协议。</li>
+<li><code>models</code>：声明模型 id、展示名、输入能力、context window、max tokens、cost、thinking level map。</li>
+<li><code>streamSimple</code>：当协议不是内置 adapter 时，直接提供自定义流式实现。</li>
+<li><code>oauth</code>：把 <code>/login</code> 接入企业 SSO 或第三方 OAuth，包含 login、refreshToken、getApiKey、modifyModels。</li>
+</ul>
+<code>models.json</code> 适合声明静态 provider 和模型；extension provider 适合运行时代码参与认证、动态模型、企业代理、实验协议。复刻时不要把这两者混成一个 JSON 解析器：静态配置不应该能随意执行本地代码，而 extension provider 本来就是代码执行边界。</p><p><h2>4.5 Thinking、usage 与 cost</h2></p><p>不同 provider 对 reasoning/thinking 的表达不同。pi 在 agent 层使用 <code>ThinkingLevel</code>，低层创建配置时把 <code>off</code> 转成 <code>undefined</code>，见 <a href="/source-code/packages/agent/src/agent.ts#L426">agent.ts#L426</a>。provider adapter 再把它映射成具体 API 字段。</p><p>usage/cost 也应该在 provider 层归一化。assistant message 携带 usage 后，session stats 才能统一聚合，入口在 <a href="/source-code/packages/coding-agent/src/core/agent-session.ts#L2877">agent-session.ts#L2877</a>。</p><p><h2>4.6 Context overflow 与自动恢复</h2></p><p>provider 的 context overflow 错误格式不同。custom-provider 文档要求自定义 provider 规范化 overflow error，否则 pi 无法识别并触发自动 compaction + retry。这里的设计决策是：恢复策略属于 harness/product，错误识别需要 provider 层提供可理解信号。</p><p>复刻时至少要定义一组标准错误类别：auth、rate limit、overloaded、context overflow、network、provider bug、aborted。不要只保留原始字符串。</p><p><h2>4.7 自定义 provider 测试清单</h2></p><p>custom provider 不是“能返回文本”就算完成。至少要测：</p><p><ul><li>text delta：增量文本能变成统一 assistant message。</li>
+<li>tool call delta：provider 分片返回的 tool name、id、arguments 能被累积成完整 JSON。</li>
+<li>thinking delta：reasoning 内容能按 pi 的 thinking 事件或隐藏块语义处理。</li>
+<li>usage/cost：输入、输出、cache read/write 能进入 session stats。</li>
+<li>abort：AbortSignal 中断网络请求，最终不会继续写 session。</li>
+<li>overflow：provider-specific 错误能归类为 context overflow。</li>
+<li>OAuth refresh：过期 credential 能刷新并持久化，刷新失败能回到 <code>/login</code>。</li>
+<li>headers：<code>authHeader</code>、custom headers、model-level headers 的优先级确定。</li>
+</ul>
+这也是为什么 provider adapter 要有 faux tests。真实 provider 会漂移，只有 fake stream 能稳定覆盖边界条件。</p><p><h2>4.8 复刻原则</h2></p><p>MVP 可以只支持一个 OpenAI-compatible provider，但也要把 provider adapter 独立出来。接口至少包括：model config、auth resolver、stream function、usage/cost、overflow error normalization、tool call delta accumulation。</p><p>生产级再补：model registry、custom models、custom providers、OAuth、transport 选择、provider retry、prompt caching、thinking level map、provider payload hook、response header hook。
 </p>
 </body>
 </html>

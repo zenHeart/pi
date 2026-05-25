@@ -2,8 +2,8 @@
 <package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookId" version="3.0">
   <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
     <dc:identifier id="BookId">pi-agent-book</dc:identifier>
-    <dc:title>Pi Agent 实战：从源码到复刻</dc:title>
-    <dc:creator>Pi Agent 团队</dc:creator>
+    <dc:title>Pi Agent 实战：从使用到复刻</dc:title>
+    <dc:creator>Pi Agent Handbook</dc:creator>
     <dc:language>zh-CN</dc:language>
     <meta property="dcterms:modified">2026-05-25T00:00:00Z</meta>
   </metadata>

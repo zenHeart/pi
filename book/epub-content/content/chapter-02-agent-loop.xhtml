@@ -16,157 +16,36 @@
   </style>
 </head>
 <body>
-<p><h1>第2章 Agent Loop：核心状态机</h1></p><p>> <strong>本章目标</strong>：拆解 pi Agent Loop 的状态机、退出路径和工具闭环。
-> <strong>pi 源码对照</strong>：
-> - <code>packages/agent/src/agent-loop.ts</code> — Agent Loop 主循环
-> - <code>packages/agent/src/agent.ts</code> — Agent 主类
-> - <code>packages/coding-agent/src/core/agent-session-runtime.ts</code> — 会话运行时
-> - <code>packages/coding-agent/src/core/agent-session.ts</code> — Agent Session 实现
->
-> <strong>本章结束能做什么</strong>：能实现并审查一个生产级 Agent Loop。
-> <strong>阅读时间</strong>：约 35 分钟。</p><p>---</p><p><h2>1. Agent Loop 概述</h2></p><p>Agent Loop 是整个 Agent 系统的核心编排引擎。它接收用户输入，通过 LLM 生成响应，决定是否调用工具，并循环直到任务完成或达到终止条件。</p><p><h3>1.1 核心模式</h3></p><p>pi 使用 AsyncGenerator 模式实现 Agent Loop：</p><p><pre><code class="language-typescript">// packages/agent/src/agent-loop.ts
-export async function<em> runAgentLoop(
-  harness: AgentHarness,
-  session: AgentSession,
-): AsyncGenerator<AgentEvent, AgentResult> {
-  let turnCount = 0
-  while (true) {
-    yield { type: 'turn_start', turnCount }</p><p>    const result = yield</em> executeTurn(harness, session)</p><p>    if (result.done) {
-      return result.value
-    }</p><p>    turnCount++
-  }
-}
-</code></pre></p><p><h3>1.2 pi 的 Agent Session</h3></p><p><pre><code class="language-typescript">// packages/coding-agent/src/core/agent-session.ts
-export class AgentSession {
-  readonly id: string
-  private messages: Message[] = []
-  private turnCount: number = 0</p><p>  constructor(
-    private harness: AgentHarness,
-    config: SessionConfig,
-  ) {
-    this.id = config.id ?? generateSessionId()
-  }</p><p>  async <em>run(): AsyncGenerator<SessionEvent, SessionResult> {
-    for await (const event of this.harness.generateResponse(this)) {
-      yield event
-    }
-  }
-}
-</code></pre></p><p>---</p><p><h2>2. 状态机设计</h2></p><p><h3>2.1 状态字段</h3></p><p>pi 的 Agent Loop 状态包含：</p><p><pre><code class="language-typescript">// packages/agent/src/harness/types.ts
-export interface LoopState {
-  messages: Message[]
-  turnCount: number
-  autoCompactTracking: AutoCompactState | undefined
-  maxOutputTokensRecoveryCount: number
-  pendingToolUseSummary: Promise<string> | undefined
-  stopHookActive: boolean
-  transition: Continue | undefined
-}
-</code></pre></p><p><h3>2.2 退出路径</h3></p><p>Agent Loop 的 9 条退出路径：</p><p><table><thead><tr><th>路径</th><th>条件</th><th>恢复策略</th></tr></thead><tbody><tr><td><code>end_turn</code></td><td>模型正常结束</td><td>返回完成结果</td></tr><tr><td><code>tool_use</code></td><td>模型调用工具</td><td>执行工具并继续循环</td></tr><tr><td><code>max_tokens</code></td><td>输出达到上限</td><td>扩大 max_tokens 重试</td></tr><tr><td><code>context_overflow</code></td><td>上下文溢出</td><td>触发压缩并重试</td></tr><tr><td><code>stop_hook</code></td><td>Stop Hook 阻止</td><td>等待或中止</td></tr><tr><td><code>error</code></td><td>执行出错</td><td>错误处理后决定是否继续</td></tr><tr><td><code>user_interrupt</code></td><td>用户主动中断</td><td>优雅退出</td></tr><tr><td><code>max_turns</code></td><td>达到轮次上限</td><td>返回当前状态</td></tr><tr><td><code>budget_exceeded</code></td><td>超出预算</td><td>停止并报告</td></tr></tbody></table>
-<h3>2.3 循环流程图</h3></p><p><pre><code class="language-">                    ┌─────────────┐
-                    │  turn_start │
-                    └──────┬──────┘
-                           ▼
-                    ┌─────────────┐
-              ┌───▶│  AI 生成    │
-              │     └──────┬──────┘
-              │            ▼
-              │     ┌─────────────┐
-              │     │ 检查 stop   │
-              │     │   reason    │
-              │     └──────┬──────┘
-              │            │
-       ┌──────┼────────────┼──────┐
-       │      │            │      │
-       ▼      ▼            ▼      ▼
-   end_turn  tool_use  max_tokens  error
-       │      │            │      │
-       │      ▼            ▼      │
-       │  ┌────────┐  ┌────────┐ │
-       │  │执行工具│  │扩大token│ │
-       │  └───┬────┘  └────┬───┘ │
-       │      │            │     │
-       └──────┴────────────┴─────┘
-                    │ continue
-                    ▼
-              turn_start
-</code></pre></p><p>---</p><p><h2>3. StreamingToolExecutor 并发模型</h2></p><p><h3>3.1 工具执行策略</h3></p><p>pi 支持工具的并发执行，特别是只读工具：</p><p><pre><code class="language-typescript">// packages/agent/src/agent-loop.ts
-export function groupToolsByConcurrency(
-  tools: ToolCall[]
-): ToolCall[][] {
-  // 可并发组：只读工具（Read, Grep, Glob 等）
-  const concurrencySafe = tools.filter(t => isReadOnlyTool(t))
-  // 需串行组：写操作工具（Bash, Write, Edit 等）
-  const exclusive = tools.filter(t => !isReadOnlyTool(t))</p><p>  return [
-    ...(concurrencySafe.length > 0 ? [concurrencySafe] : []),
-    ...(exclusive.length > 0 ? [exclusive] : []),
-  ]
-}
-</code></pre></p><p><h3>3.2 执行循环</h3></p><p><pre><code class="language-typescript">async function executeToolGroup(
-  group: ToolCall[],
-  harness: AgentHarness,
-  session: AgentSession,
-): Promise<ToolResult[]> {
-  return Promise.all(group.map(tool =>
-    harness.executeTool(session, tool)
-  ))
-}
-</code></pre></p><p>---</p><p><h2>4. 压缩触发器</h2></p><p><h3>4.1 自动压缩状态</h3></p><p><pre><code class="language-typescript">// packages/agent/src/harness/compaction/compaction.ts
-export interface AutoCompactTrackingState {
-  consecutiveFailures: number
-  lastCompactTime: number
-  compactReason: CompactReason
-}</p><p>export type CompactReason =
-  | 'token_limit'
-  | 'auto_compact'
-  | 'manual'
-  | 'reactive'
-</code></pre></p><p><h3>4.2 压缩触发条件</h3></p><p>pi 的压缩在以下条件触发：</p><p>1. <strong>Token 超限</strong>：当前消息列表接近模型上下文窗口
-2. <strong>自动压缩</strong>：按配置的 interval 定期压缩
-3. <strong>手动触发</strong>：用户通过命令触发
-4. <strong>响应式压缩</strong>：连续操作失败后触发</p><p><h3>4.3 4 阶段压缩管道</h3></p><p><pre><code class="language-typescript">// 阶段 1: Snip - 移除过长的 tool result 内容
-// 阶段 2: Microcompact - 合并连续的工具调用为摘要
-// 阶段 3: Context Collapse - 折叠早期对话
-// 阶段 4: AutoCompact - 完整上下文压缩
-</code></pre></p><p>---</p><p><h2>5. 熔断器模式</h2></p><p><h3>5.1 压缩熔断器</h3></p><p><pre><code class="language-typescript">// packages/agent/src/harness/compaction/compaction.ts
-export class CompactionCircuitBreaker {
-  private failureCount = 0
-  private lastFailureTime = 0</p><p>  readonly maxConsecutiveFailures = 3
-  readonly cooldownMs = 60_000</p><p>  shouldTrip(): boolean {
-    return this.failureCount >= this.maxConsecutiveFailures
-  }</p><p>  recordFailure(): void {
-    this.failureCount++
-    this.lastFailureTime = Date.now()
-  }</p><p>  recordSuccess(): void {
-    this.failureCount = 0
-  }</p><p>  isInCooldown(): boolean {
-    return Date.now() - this.lastFailureTime < this.cooldownMs
-  }
-}
-</code></pre></p><p><h3>5.2 API 熔断器</h3></p><p>API 调用使用类似的熔断器模式，防止连续失败导致资源耗尽。</p><p>---</p><p><h2>6. 关键代码解读</h2></p><p><h3>6.1 Agent 主循环</h3></p><p><pre><code class="language-typescript">// packages/coding-agent/src/core/agent-session-runtime.ts
-export async function</em> runAgentLoop(
-  harness: AgentHarness,
-  session: AgentSession,
-): AsyncGenerator<AgentEvent, AgentResult> {
-  let turnCount = 0
-  const maxTurns = session.config.maxTurns ?? 100</p><p>  while (turnCount < maxTurns) {
-    yield { type: 'turn_start', turnCount }</p><p>    // 1. 检查是否需要压缩
-    if (shouldCompact(session)) {
-      yield* compactContext(session)
-    }</p><p>    // 2. 生成 AI 响应
-    for await (const event of harness.generateResponse(session)) {
-      yield event</p><p>      // 工具调用事件处理
-      if (event.type === 'tool_call') {
-        const result = await harness.executeTool(session, event.toolCall)
-        session.addMessage({ type: 'tool_result', ...result })
-        yield { type: 'tool_result', result }
-      }
-    }</p><p>    // 3. 检查停止条件
-    if (session.shouldStop()) {
-      break
-    }</p><p>    turnCount++
-  }</p><p>  return { turnCount, finalState: session.getState() }
-}
-</code></pre></p><p>---</p><p>> <strong>下一步阅读</strong>：<a href="./chapter-03-tools.md">第3章 Tools</a> — 深入工具系统。
+<p><h1>第2章 Agent Loop：从一次 prompt 到任务完成</h1></p><p><h2>2.1 Agent Loop 的问题边界</h2></p><p>LLM 每次只能生成下一段内容或下一步工具请求，但 coding 任务需要多轮推理、多次文件读取、多次命令执行和错误修正。Agent Loop 解决的就是“把模型的下一步生成变成可持续完成任务的运行时循环”。</p><p>pi 的低层入口是 <a href="/source-code/packages/agent/src/agent-loop.ts#L31">agentLoop()#L31</a> 和 <a href="/source-code/packages/agent/src/agent-loop.ts#L64">agentLoopContinue()#L64</a>。它们返回 <code>EventStream</code>，不是直接返回字符串。这个选择决定了后续架构：UI 不需要等待最终文本，RPC 可以输出 JSONL 事件，测试可以断言中间过程，session 可以只在稳定边界写入。</p><p><h2>2.2 两层循环</h2></p><p>核心循环在 <a href="/source-code/packages/agent/src/agent-loop.ts#L155">agent-loop.ts#L155</a>。它有两种队列语义：</p><p><ul><li>steering：用户在 agent 运行中追加的指令，进入当前工作流的下一轮 turn。</li>
+<li>follow-up：用户排队的下一件事，等当前 agent run 结束后再处理。</li>
+</ul>
+这比“用户输入就立刻打断 provider 请求”更可控。provider request 和工具执行都有副作用，随意并发会造成 transcript 顺序不确定、工具结果丢失、UI 状态混乱。pi 把用户继续输入变成队列，在安全点 drain。</p><p><pre><code class="language-mermaid">flowchart TD
+  Start[agent_start] --> Turn[turn_start]
+  Turn --> Steering[drain steering queue]
+  Steering --> Stream[streamAssistantResponse]
+  Stream --> HasTool{assistant 有 toolCall?}
+  HasTool -->|否| EndTurn[turn_end]
+  HasTool -->|是| Execute[executeToolCalls]
+  Execute --> Result[toolResult messages]
+  Result --> EndTurn
+  EndTurn --> Stop{shouldStopAfterTurn?}
+  Stop -->|否| Turn
+  Stop -->|是| End[agent_end]
+</code></pre></p><p><h2>2.3 流式 assistant reducer</h2></p><p><code>streamAssistantResponse()</code> 从 <a href="/source-code/packages/agent/src/agent-loop.ts#L275">agent-loop.ts#L275</a> 开始执行 provider 请求。它先运行 <code>transformContext</code>，再 <code>convertToLlm</code>，再调用 <code>streamSimple</code>。这三个边界分别代表：</p><p>1. 内部上下文变换：扩展、压缩、产品消息决定是否进入模型。
+2. provider 消息转换：把 pi 的 <code>AgentMessage</code> 转成 provider API 能接受的 <code>Message</code>。
+3. provider 适配：不同模型协议统一成 assistant event stream。</p><p>流式事件进入 reducer 后，<code>start</code> 创建 partial assistant message，<code>text_delta</code>、<code>thinking_delta</code>、<code>toolcall_delta</code> 更新 partial，最终事件产生完整 assistant message。相关 reducer 从 <a href="/source-code/packages/agent/src/agent-loop.ts#L306">agent-loop.ts#L306</a> 附近开始。partial 适合 UI，final message 适合 session。</p><p><h2>2.4 工具执行路径</h2></p><p>当 assistant message 包含 tool call，loop 调用 <a href="/source-code/packages/agent/src/agent-loop.ts#L373">executeToolCalls()#L373</a>。工具执行不是简单 <code>tools<a href="args">name</a></code>，而是一个有边界的管道：</p><p>1. 根据 tool name 查找 <code>AgentTool</code>。
+2. 调用 <code>prepareToolCall()</code>，入口见 <a href="/source-code/packages/agent/src/agent-loop.ts#L562">agent-loop.ts#L562</a>。
+3. 运行参数校验和参数预处理。
+4. 运行 <code>beforeToolCall</code> hook，允许扩展阻止或修改。
+5. 根据 sequential/parallel 规则执行。
+6. 捕获工具错误并转成 error tool result。
+7. 运行 <code>afterToolCall</code> hook，允许扩展修改结果。
+8. 生成 <code>toolResult</code> message。
+9. 发出 <code>tool_execution_<em></code> 和 <code>message_</em></code> 事件。</p><p>如果工具声明或全局配置要求 sequential，工具串行执行；否则可并行。这个差异很重要：读文件工具通常可以并行，写文件或 shell 工具可能必须串行。</p><p><h2>2.5 事件是协议，不是日志</h2></p><p>loop 发出的事件至少包括 <code>agent_start</code>、<code>turn_start</code>、<code>message_start</code>、<code>message_update</code>、<code>message_end</code>、<code>tool_execution_start</code>、<code>tool_execution_update</code>、<code>tool_execution_end</code>、<code>turn_end</code>、<code>agent_end</code>。<code>Agent</code> 通过事件更新内部状态；<code>AgentSession</code> 通过事件持久化、触发扩展和通知 UI。</p><p>这意味着事件必须稳定、结构化、有明确时机。<code>message_update</code> 不是最终事实；<code>message_end</code> 才是稳定消息。<code>tool_execution_update</code> 可以显示 shell 输出；<code>tool_execution_end</code> 才能记录 exit code 或最终结果。复刻时如果只输出字符串日志，后续 RPC、eval、扩展 UI 都会很难做。</p><p><h2>2.6 错误语义</h2></p><p>pi 的 loop 设计倾向于“能进入 transcript 的错误就进入 transcript”。工具参数错、工具不存在、工具抛错，都应该转成 tool result，让模型能恢复。provider 失败则生成 assistant error message 或触发 retry/compaction 策略。用户 abort 通过 <code>AbortSignal</code> 下传，不应该伪装成普通失败。</p><p>复刻时要区分三类错误：</p><p><ul><li>可恢复工作错误：文件不存在、命令失败、工具参数不合法，进入上下文。</li>
+<li>运行时错误：provider 认证失败、网络失败、扩展异常，展示给用户并考虑 retry。</li>
+<li>控制流错误：abort、session switch、tree navigation，不应被模型误解成任务失败。</li>
+</ul>
+<h2>2.7 复刻原则</h2></p><p>MVP loop 必须具备：用户消息追加；provider 流式消费；assistant final message；tool call 校验执行；tool result 回灌；事件流；abort signal；错误消息；最大轮次或 stop 条件。</p><p>生产级 loop 继续补：steering/follow-up 队列；parallel/sequential 工具执行；before/after hooks；context transform；provider payload hook；save point；auto retry；overflow compaction；session tree；可观测 trace。
 </p>
 </body>
 </html>

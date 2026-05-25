@@ -1,198 +1,59 @@
 # 第8章 Token 与预算管理
 
-> **本章目标**：解释 token、上下文窗口、成本和 task budget 如何共同约束 Agent。
-> **pi 源码对照**：
-> - `packages/agent/src/harness/session/session.ts` — 会话中的成本追踪
-> - `packages/agent/src/harness/session/memory-storage.ts` — 预算持久化
-> - `packages/coding-agent/src/core/messages.ts` — Token 估算
->
-> **本章结束能做什么**：能为自定义 harness 设计成本追踪、预算提示和压缩触发策略。
-> **阅读时间**：约 20 分钟。
+## 8.1 为什么预算是产品能力
 
----
+Token 不是账单统计的附属品。对 coding agent 来说，token 预算决定任务能否继续、工具输出能否进入模型、历史是否需要压缩、thinking level 是否值得开启、provider 是否会触发 overflow。预算管理做不好，用户看到的是随机失败、变慢、变贵和上下文遗忘。
 
-## 1. Token 基础
+pi 在 footer、session stats、compaction 和 retry 中都使用预算信息。`AgentSession.getSessionStats()` 从 [agent-session.ts#L2877](/source-code/packages/coding-agent/src/core/agent-session.ts#L2877) 开始聚合消息、tool calls、token 和 cost；context usage 计算从 [agent-session.ts#L2931](/source-code/packages/coding-agent/src/core/agent-session.ts#L2931) 附近开始。
 
-### 1.1 估算规则
+## 8.2 usage 从哪里来
 
-| 类型 | bytes/token | 示例 |
-|------|-------------|------|
-| 英文 | ~4 | 1K token ≈ 750 字 |
-| 中文 | ~2 | 1K token ≈ 500 字 |
-| JSON | ~2 | 1K token ≈ 500 字符 |
-| 代码 | ~3-4 | 1K token ≈ 250 行 |
+provider adapter 负责把供应商返回的 usage 归一化到 assistant message。上层不应该解析每个 provider 的原始响应。这样 session stats、HTML export、RPC event 和 eval runner 才能用同一套字段。
 
-### 1.2 pi 估算实现
+需要区分的 usage 至少包括：
 
-```typescript
-// packages/coding-agent/src/core/messages.ts
-export function roughTokenCount(
-  content: string,
-  type: 'text' | 'code' | 'json' = 'text',
-): number {
-  const bytesPerToken = type === 'code' ? 3.5
-    : type === 'json' ? 2
-    : 4
-  return Math.ceil(content.length / bytesPerToken)
-}
-```
+- input tokens。
+- output tokens。
+- cache read tokens。
+- cache write tokens。
+- thinking/reasoning tokens。
+- cost。
 
----
+不同 provider 字段不一致，不能假设所有模型都能返回完整 usage。缺失时要显示未知，而不是伪造 0。
 
-## 2. 成本追踪
+## 8.3 工具输出预算
 
-### 2.1 Usage 记录
+工具输出最容易吞掉上下文。`bash`、`grep`、`read` 都可能输出大量文本。pi 用截断和 accumulator 控制输出，核心位置见 [truncate.ts#L78](/source-code/packages/coding-agent/src/core/tools/truncate.ts#L78) 与 [output-accumulator.ts#L29](/source-code/packages/coding-agent/src/core/tools/output-accumulator.ts#L29)。
 
-```typescript
-// packages/agent/src/harness/session/session.ts
-export interface ModelUsage {
-  inputTokens: number
-  outputTokens: number
-  cacheCreationInputTokens?: number
-  cacheReadInputTokens?: number
-  totalCostUSD: number
-}
+好的工具输出策略不是“截断到 N 字符”这么简单。它应该告诉模型：
 
-export function recordUsage(
-  session: AgentSession,
-  usage: ModelUsage,
-): void {
-  // 更新会话总成本
-  session.totalCost += usage.totalCostUSD
+- 输出被截断。
+- 保留了哪些部分。
+- 完整输出是否保存到文件。
+- 后续如果需要完整内容，应读哪个路径或重新运行什么命令。
 
-  // 按模型追踪
-  const model = session.config.model
-  if (!session.modelUsage[model]) {
-    session.modelUsage[model] = {
-      inputTokens: 0,
-      outputTokens: 0,
-      totalCostUSD: 0,
-    }
-  }
+否则模型会把不完整输出当完整事实，做出错误判断。
 
-  const current = session.modelUsage[model]
-  current.inputTokens += usage.inputTokens
-  current.outputTokens += usage.outputTokens
-  current.totalCostUSD += usage.totalCostUSD
-}
-```
+## 8.4 Thinking 预算
 
-### 2.2 成本计算
+pi 用 `ThinkingLevel` 表达 `off`、`minimal`、`low`、`medium`、`high` 等思考等级。低层 `Agent` 在构造 config 时把 `off` 转成 `undefined`，见 [agent.ts#L426](/source-code/packages/agent/src/agent.ts#L426)。不同 provider 对 thinking 的支持不同，model registry 需要映射或隐藏不支持的等级。
 
-```typescript
-// packages/agent/src/harness/session/session.ts
-const MODEL_PRICING = {
-  'claude-3-5-sonnet': {
-    input: 3,      // $3 / MTok
-    output: 15,    // $15 / MTok
-  },
-  'claude-3-5-haiku': {
-    input: 0.8,    // $0.8 / MTok
-    output: 4,     // $4 / MTok
-  },
-}
+产品上，thinking level 是用户可调的成本/质量旋钮。简单编辑不需要 high；复杂架构任务可能需要 high。复刻时不要把 thinking 写成固定 provider 字段，而应作为模型能力的一部分。
 
-export function calculateCost(
-  model: string,
-  usage: ModelUsage,
-): number {
-  const pricing = MODEL_PRICING[model] ?? MODEL_PRICING['claude-3-5-haiku']
-  const inputCost = (usage.inputTokens / 1_000_000) * pricing.input
-  const outputCost = (usage.outputTokens / 1_000_000) * pricing.output
-  return inputCost + outputCost
-}
-```
+## 8.5 自动压缩与 retry
 
----
+当上下文接近窗口上限，harness 可以主动 compaction。当 provider 返回 overflow，pi 可以识别错误、运行 compaction、再 retry。custom provider 必须规范化 overflow 错误，否则自动恢复无法触发。
 
-## 3. 预算管理
+这个流程要求预算和错误分类协作：
 
-### 3.1 预算配置
+1. 模型 registry 知道 context window。
+2. session/context builder 能估算当前上下文。
+3. compaction 能保留最近关键消息。
+4. provider error 能标记 overflow。
+5. retry 不应无限循环。
 
-```typescript
-// packages/agent/src/harness/session/session.ts
-export interface BudgetConfig {
-  maxCostUSD: number           // 最大总成本
-  maxTokens: number           // 最大 token 数
-  warningThreshold: number     // 警告阈值（百分比）
-}
+## 8.6 复刻原则
 
-export function checkBudget(
-  session: AgentSession,
-  config: BudgetConfig,
-): BudgetStatus {
-  const { maxCostUSD, warningThreshold } = config
-  const costRatio = session.totalCost / maxCostUSD
+MVP：记录 usage；显示 token/cost；截断工具输出；手动 compact。
 
-  if (costRatio >= 1) {
-    return { status: 'exceeded', ratio: costRatio }
-  }
-  if (costRatio >= warningThreshold) {
-    return { status: 'warning', ratio: costRatio }
-  }
-  return { status: 'ok', ratio: costRatio }
-}
-```
-
-### 3.2 预算超限处理
-
-```typescript
-// packages/agent/src/harness/session/session.ts
-export function handleBudgetExceeded(
-  session: AgentSession,
-  config: BudgetConfig,
-): LoopAction {
-  const status = checkBudget(session, config)
-
-  if (status.status === 'exceeded') {
-    return {
-      action: 'stop',
-      reason: 'budget_exceeded',
-      message: `Budget exceeded: $${session.totalCost.toFixed(4)} / $${config.maxCostUSD}`,
-    }
-  }
-
-  if (status.status === 'warning') {
-    return {
-      action: 'warn',
-      reason: 'budget_warning',
-      message: `Budget warning: ${(status.ratio * 100).toFixed(0)}% used`,
-    }
-  }
-
-  return { action: 'continue' }
-}
-```
-
----
-
-## 4. taskBudget 跨压缩追踪
-
-```typescript
-// packages/agent/src/harness/compaction/compaction.ts
-export interface CompactTracking {
-  originalBudget: number
-  usedAcrossCompacts: number
-  preservedEssentialTokens: number
-}
-
-export function trackBudgetAcrossCompaction(
-  before: CompactState,
-  after: CompactState,
-  tracking: CompactTracking,
-): CompactTracking {
-  const beforeTokens = sumMessageTokens(before.messages)
-  const afterTokens = sumMessageTokens(after.messages)
-  const delta = beforeTokens - afterTokens
-
-  return {
-    ...tracking,
-    usedAcrossCompacts: tracking.usedAcrossCompacts + delta,
-    preservedEssentialTokens: tracking.preservedEssentialTokens + afterTokens,
-  }
-}
-```
-
----
-
-> **下一步阅读**：[第9章 权限与安全](./chapter-09-permission-and-security.md) — 权限架构。
+生产级：context usage；thinking budgets；cache token；cost 聚合；overflow detection；auto compaction；retry backoff；provider retry delay cap；工具输出落盘；eval trace 中记录预算。

@@ -16,92 +16,27 @@
   </style>
 </head>
 <body>
-<p><h1>第5章 System Prompt：行为宪法</h1></p><p>> <strong>本章目标</strong>：解释 System Prompt 如何约束 Agent 行为并参与缓存。
-> <strong>pi 源码对照</strong>：
-> - <code>packages/coding-agent/src/core/system-prompt.ts</code> — System Prompt 构建
-> - <code>packages/coding-agent/src/core/prompt-templates.ts</code> — Prompt 模板
-> - <code>packages/agent/src/harness/system-prompt.ts</code> — Harness Prompt
->
-> <strong>本章结束能做什么</strong>：能把行为规范、工具规则、动态环境和 Skill 指令组织成可维护 prompt。
-> <strong>阅读时间</strong>：约 20 分钟。</p><p>---</p><p><h2>1. System Prompt 的角色</h2></p><p>System Prompt 是 Agent 的"宪法"——它定义了 AI 的能力边界、行为约束和交互范式。</p><p><h3>1.1 核心组成</h3></p><p><pre><code class="language-typescript">// packages/coding-agent/src/core/system-prompt.ts
-export interface SystemPromptSections {
-  // 静态区（可缓存）
-  intro: string           // 身份定义
-  systemRules: string    // 系统级行为规则
-  toolGuidelines: string // 工具使用契约
-  toneAndStyle: string   // 语气风格</p><p>  // 动态区（不可缓存）
-  sessionGuidance: string // 会话特定指导
-  memoryContext: string   // 记忆上下文
-  mcpInstructions: string // MCP 指令
-  scratchpad: string     // 草稿区
-}
-</code></pre></p><p>---</p><p><h2>2. 模块化构建</h2></p><p><h3>2.1 构建入口</h3></p><p><pre><code class="language-typescript">// packages/coding-agent/src/core/system-prompt.ts
-export function buildSystemPrompt(
-  config: PromptConfig,
-): string[] {
-  const sections: string[] = []</p><p>  // 静态区（可缓存）
-  sections.push(buildIntro(config.model))
-  sections.push(buildSystemRules())
-  sections.push(buildToolGuidelines(config.tools))
-  sections.push(buildToneAndStyle(config.outputStyle))</p><p>  // 动态区（不可缓存）
-  sections.push(buildSessionGuidance(config.session))
-  sections.push(buildMemoryContext(config.memory))
-  sections.push(buildMcpInstructions(config.mcpServers))</p><p>  return sections
-}
-</code></pre></p><p><h3>2.2 缓存边界</h3></p><p><pre><code class="language-">┌─────────────────────────────────────────────────────────────┐
-│  静态区（可缓存）                                            │
-│  - 身份定义                                                 │
-│  - 工具契约                                                 │
-│  - 语气风格                                                 │
-└─────────────────────────────────────────────────────────────┘
-                        ↓
-         SYSTEM_PROMPT_DYNAMIC_BOUNDARY
-                        ↓
-┌─────────────────────────────────────────────────────────────┐
-│  动态区（不可缓存）                                          │
-│  - 会话特定指导                                              │
-│  - 记忆上下文                                               │
-│  - MCP 指令                                                │
-└─────────────────────────────────────────────────────────────┘
-</code></pre></p><p>---</p><p><h2>3. 工具契约</h2></p><p><h3>3.1 工具优先原则</h3></p><p><pre><code class="language-typescript">// packages/coding-agent/src/core/prompt-templates.ts
-export const TOOL_GUIDELINES = <code>
-To read files use the Read tool instead of cat, head, tail, or sed.
-To edit files use the Edit tool instead of sed or awk.
-To create files use the Write tool instead of cat with heredoc.
-To search for files use the Glob tool instead of find or ls.
-To search the content of files use Grep instead of grep.</p><p>Reserve using Bash exclusively for system commands that require shell execution.
-</code>
-</code></pre></p><p><h3>3.2 风险管控原则</h3></p><p><pre><code class="language-typescript">// packages/coding-agent/src/core/prompt-templates.ts
-export const RISK_GUIDELINES = <code>
-Carefully consider the reversibility and blast radius of actions.</p><p>Generally you can freely take local, reversible actions like editing files.
-But for actions that are hard to reverse or affect shared systems, check with the user before proceeding.</p><p>Examples of risky actions that warrant user confirmation:
-<ul><li>Destructive: deleting files/branches, dropping database tables</li>
-<li>Hard-to-reverse: force-pushing, git reset --hard</li>
-<li>Shared state: pushing code, creating PRs, sending messages</li>
-</ul></code>
-</code></pre></p><p>---</p><p><h2>4. Skill 注入</h2></p><p><h3>4.1 Skill 加载时机</h3></p><p><pre><code class="language-typescript">// packages/coding-agent/src/core/skills.ts
-export function injectSkillInstructions(
-  skills: Skill[],
-): string[] {
-  return skills.map(skill => <code>
-<h2>Skill: ${skill.name}</h2></p><p>${skill.description}</p><p>${skill.instructions}
-</code>)
-}
-</code></pre></p><p>---</p><p><h2>5. pi 源码实现</h2></p><p><pre><code class="language-typescript">// packages/agent/src/harness/system-prompt.ts
-export class SystemPromptBuilder {
-  private sections: string[] = []</p><p>  addStaticSection(content: string): this {
-    this.sections.push(content)
-    return this
-  }</p><p>  addDynamicSection(content: string): this {
-    this.sections.push(content)
-    return this
-  }</p><p>  build(): string[] {
-    return this.sections
-  }</p><p>  toString(): string {
-    return this.sections.join('\n\n')
-  }
-}
-</code></pre></p><p>---</p><p>> <strong>下一步阅读</strong>：<a href="./chapter-06-build-from-zero.md">第6章 从零构建最小 Agent</a> — 动手实践。
+<p><h1>第5章 System Prompt：模型看到的操作系统说明书</h1></p><p><h2>5.1 System Prompt 的职责</h2></p><p>System prompt 不是“人设”。在 coding agent 中，它是模型看到的操作系统说明书：当前运行环境、项目规则、工具使用方式、安全边界、输出约束、可用 skills、上下文文件、日期、cwd、模型相关说明都在这里组合。</p><p>pi 的构建函数是 <a href="/source-code/packages/coding-agent/src/core/system-prompt.ts#L28">system-prompt.ts#L28</a>。<code>AgentSession</code> 在重建系统提示时调用它，入口见 <a href="/source-code/packages/coding-agent/src/core/agent-session.ts#L878">agent-session.ts#L878</a> 和 <a href="/source-code/packages/coding-agent/src/core/agent-session.ts#L911">agent-session.ts#L911</a>。</p><p><h2>5.2 输入来源</h2></p><p>pi 的 system prompt 来源包括：</p><p><ul><li>默认 coding agent prompt。</li>
+<li>CLI <code>--system-prompt</code> 或 <code>SYSTEM.md</code>。</li>
+<li>CLI <code>--append-system-prompt</code> 或 <code>APPEND_SYSTEM.md</code>。</li>
+<li><code>AGENTS.md</code> / <code>CLAUDE.md</code> context files。</li>
+<li>当前 cwd 和日期。</li>
+<li>当前 active tools 的说明。</li>
+<li>已加载 skills 的索引。</li>
+<li>prompt templates 和 resources 的可用信息。</li>
+<li>extensions 的 <code>before_agent_start</code> 修改。</li>
+</ul>
+资源加载器负责发现这些文件和资源，<code>getSystemPrompt()</code> 和 <code>getAppendSystemPrompt()</code> 分别在 <a href="/source-code/packages/coding-agent/src/core/resource-loader.ts#L273">resource-loader.ts#L273</a> 与 <a href="/source-code/packages/coding-agent/src/core/resource-loader.ts#L277">resource-loader.ts#L277</a>。</p><p><h2>5.3 为什么 prompt 不能写死</h2></p><p>写死 system prompt 是最常见的 demo 级错误。pi 的 prompt 必须可重建，原因是运行时能力会变：</p><p><ul><li>用户通过 <code>/reload</code> 重新加载 context files、extensions、skills、prompts。</li>
+<li>active tools 变化后，工具说明必须同步变化。</li>
+<li>extension 可以在 <code>before_agent_start</code> 注入规则或消息。</li>
+<li>session switch/fork/tree 后，cwd、资源和上下文可能变化。</li>
+<li>SDK/RPC 创建 session 时可以自定义 resource loader。</li>
+</ul>
+所以 prompt builder 应该是纯组合函数，loop 不应该直接拼字符串。loop 只消费当前 turn snapshot 中已经确定的 system prompt。</p><p><h2>5.4 Context files 与系统提示文件</h2></p><p><code>AGENTS.md</code> / <code>CLAUDE.md</code> 是项目规则，通常告诉 agent 如何运行检查、代码风格、提交要求、测试限制。<code>SYSTEM.md</code> 更像替换默认系统提示；<code>APPEND_SYSTEM.md</code> 是追加规则。pi 会从全局目录、父目录链和当前项目加载 context files，加载逻辑从 <a href="/source-code/packages/coding-agent/src/core/resource-loader.ts#L75">resource-loader.ts#L75</a> 开始。</p><p>设计上要区分三种文本：</p><p><ul><li>永久运行规则：适合 context files。</li>
+<li>单次任务模板：适合 prompt templates。</li>
+<li>可复用流程知识：适合 skills。</li>
+</ul>
+全部塞进 system prompt 会让上下文不可控，也会让资源来源不可审计。</p><p><h2>5.5 扩展如何介入</h2></p><p>扩展的 <code>before_agent_start</code> 可以修改 system prompt、注入 persistent message 或调整本轮上下文。runner 中对应逻辑从 <a href="/source-code/packages/coding-agent/src/core/extensions/runner.ts#L924">runner.ts#L924</a> 开始。</p><p>这比让扩展直接修改全局字符串更安全。扩展拿到的是事件和上下文，runner 决定如何合并结果；session 也能记录扩展造成的可见变化。对于自定义 harness，关键不是“开放一个字符串变量”，而是定义清楚 hook 的输入、输出、时机和错误策略。</p><p><h2>5.6 复刻原则</h2></p><p>MVP prompt builder：接收 <code>cwd</code>、<code>tools</code>、<code>contextFiles</code>、<code>skills</code>、<code>date</code>，输出一个字符串。工具说明来自工具定义，不能手写重复描述。</p><p>生产级 prompt builder：支持 <code>SYSTEM.md</code>、<code>APPEND_SYSTEM.md</code>、全局/项目 context files、resource reload、extension hook、custom resource loader、prompt cache、不同模型的能力差异、系统提示来源诊断。
 </p>
 </body>
 </html>
