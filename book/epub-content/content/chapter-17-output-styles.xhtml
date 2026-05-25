@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <title>第17章 Output Styles</title>
+  <style>
+    body { font-family: 'Noto Sans SC', sans-serif; line-height: 1.8; margin: 1em; }
+    h1, h2, h3, h4 { color: #333; }
+    code { background: #f4f4f4; padding: 0.2em 0.4em; border-radius: 3px; }
+    pre { background: #f4f4f4; padding: 1em; overflow-x: auto; border-radius: 5px; }
+    pre code { background: none; padding: 0; }
+    table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+    th, td { border: 1px solid #ddd; padding: 0.5em; text-align: left; }
+    th { background: #f4f4f4; }
+    blockquote { border-left: 3px solid #ddd; margin: 1em 0; padding-left: 1em; color: #666; }
+  </style>
+</head>
+<body>
+<p><h1>第17章 Output Styles：可插拔的输出格式化</h1></p><p>> <strong>本章目标</strong>：理解 pi 的 Output Guard 系统——如何通过 frontmatter 控制输出的格式、语气、安全检查。
+>
+> <strong>pi 源码对照</strong>：
+> - <code>packages/coding-agent/src/core/output-guard.ts</code> — Output Guard 实现
+> - <code>packages/coding-agent/src/utils/frontmatter.ts</code> — frontmatter 解析
+>
+> <strong>本章结束能做什么</strong>：能定义自定义 Output Style，配置输出格式和安全策略。
+> <strong>前置阅读</strong>：第1章（架构总览）。</p><p>---</p><p><h2>1. Output Styles 解决的问题</h2></p><p>Code Agent 的输出面向不同场景需要不同格式：</p><p><ul><li><strong>代码审查</strong>：需要 diff 视图、注释高亮</li>
+<li><strong>日志记录</strong>：需要时间戳、分类标签</li>
+<li><strong>用户展示</strong>：需要友好的格式、进度条</li>
+<li><strong>安全审查</strong>：需要过滤敏感信息、警告标记</li>
+</ul>
+<strong>Output Styles 的本质</strong>：用 frontmatter 配置输出格式规则，Agent 自动应用。</p><p>---</p><p><h2>2. frontmatter 配置格式</h2></p><p><pre><code class="language-markdown">---
+name: code-review
+description: Output format for code review feedback
+output:
+  format: diff
+  show-line-numbers: true
+  max-delta: 50
+security:
+  filter-secrets: true
+  redact-api-keys: true
+---
+</code></pre></p><p>---</p><p><h2>3. Output Guard 架构</h2></p><p><pre><code class="language-typescript">// core/output-guard.ts
+export class OutputGuard {
+    constructor(private config: OutputStyleConfig) {}</p><p>    process(output: string): ProcessedOutput {
+        let result = output</p><p>        if (this.config.output?.filterSecrets) {
+            result = this.filterSecrets(result)
+        }</p><p>        if (this.config.output?.redactApiKeys) {
+            result = this.redactApiKeys(result)
+        }</p><p>        return {
+            content: result,
+            warnings: this.warnings,
+            metadata: this.metadata,
+        }
+    }
+}
+</code></pre></p><p>---</p><p><h2>4. 内置样式</h2></p><p>pi 内置几种输出样式：</p><p><table><thead><tr><th>样式</th><th>用途</th><th>关键配置</th></tr></thead><tbody><tr><td><code>default</code></td><td>通用输出</td><td>无特殊过滤</td></tr><tr><td><code>code-review</code></td><td>diff 视图</td><td>show-line-numbers, max-delta</td></tr><tr><td><code>minimal</code></td><td>最小输出</td><td>strip-comments, compact-format</td></tr><tr><td><code>verbose</code></td><td>详细日志</td><td>include-timestamps, include-stack-traces</td></tr></tbody></table>
+---</p><p><h2>5. 与 System Prompt 的关系</h2></p><p>Output Style 不是 system prompt 的一部分，而是<strong>输出后处理</strong>：</p><p><pre><code class="language-mermaid">flowchart LR
+    A[LLM 输出] --> B[Output Guard]
+    B --> C{应用哪个 Style?}
+    C -->|code-review| D[diff 格式化]
+    C -->|minimal| E[精简输出]
+    C -->|default| F[直接输出]
+    D --> G[最终输出]
+    E --> G
+    F --> G
+</code></pre></p><p>---</p><p><h2>6. 安全过滤</h2></p><p><h3>6.1 敏感信息过滤</h3></p><p><pre><code class="language-typescript">// core/output-guard.ts
+private filterSecrets(text: string): string {
+    // 过滤 API Keys
+    text = text.replace(/sk-[a-zA-Z0-9]{32,}/g, '[REDACTED_API_KEY]')</p><p>    // 过滤 Bearer Tokens
+    text = text.replace(/Bearer\s+[a-zA-Z0-9\-_]+\.[a-zA-Z0-9\-_]+\.[a-zA-Z0-9\-_]+/g, '[REDACTED_TOKEN]')</p><p>    // 过滤私钥
+    text = text.replace(/-----BEGIN\s+(RSA|DSA|EC|OPENSSH)\s+PRIVATE KEY-----/g, '[REDACTED_PRIVATE_KEY]')</p><p>    return text
+}
+</code></pre></p><p><h3>6.2 警告注入</h3></p><p>当检测到敏感信息被过滤时，自动注入警告：</p><p><pre><code class="language-typescript">if (this.filteredCount > 0) {
+    this.warnings.push({
+        type: 'sensitive-data-filtered',
+        count: this.filteredCount,
+        suggestion: 'Use environment variables for secrets'
+    })
+}
+</code></pre></p><p>---</p><p><h2>7. 自定义 Output Style</h2></p><p><h3>7.1 定义新的 Style</h3></p><p>在 <code>~/.pi/styles/</code> 或项目 <code>.pi/styles/</code> 中添加 Markdown 文件：</p><p><pre><code class="language-markdown">---
+name: my-project-style
+description: Custom output format for my project
+output:
+  format: custom
+  prefix: "[my-project] "
+  timestamp: true
+security:
+  filter-secrets: true
+---</p><p><h1>Custom Output Style</h1></p><p>This style is used for my project's specific requirements.
+</code></pre></p><p><h3>7.2 加载链路</h3></p><p><pre><code class="language-typescript">// core/output-guard.ts: loadStyles()
+export function loadStyles(stylesDir: string): OutputStyle[] {
+    const files = readdirSync(stylesDir).filter(f => f.endsWith('.md'))</p><p>    return files.map(file => {
+        const content = readFileSync(join(stylesDir, file), 'utf-8')
+        const { frontmatter } = parseFrontmatter(content)
+        return {
+            name: frontmatter.name || basename(file, '.md'),
+            description: frontmatter.description,
+            config: frontmatter,
+        }
+    })
+}
+</code></pre></p><p>---</p><p><h2>8. 样式优先级</h2></p><p>当多个样式匹配时，按以下优先级应用：</p><p>1. <strong>命令行指定</strong>：<code>--style code-review</code>
+2. <strong>项目配置</strong>：<code>.pi/config.yaml</code> 中的 <code>output.style</code>
+3. <strong>会话默认值</strong>：<code>default</code> 样式</p><p>---</p><p><h2>9. 实践要点</h2></p><p>1. <strong>不要在 prompt 里硬编码格式</strong>——用 Output Style 分离关注点
+2. <strong>敏感过滤要保守</strong>——宁可多过滤也不要漏
+3. <strong>警告要可操作</strong>——给出修复建议而不仅仅是"发现敏感信息"</p><p>---</p><p>> <strong>下一步阅读</strong>：<a href="./chapter-18-eval-and-observability.md">第18章 Eval 与可观测性</a> — 理解 pi 的评测体系。
+</p>
+</body>
+</html>

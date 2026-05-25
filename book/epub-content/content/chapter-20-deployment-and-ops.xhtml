@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <title>第20章 部署与运维</title>
+  <style>
+    body { font-family: 'Noto Sans SC', sans-serif; line-height: 1.8; margin: 1em; }
+    h1, h2, h3, h4 { color: #333; }
+    code { background: #f4f4f4; padding: 0.2em 0.4em; border-radius: 3px; }
+    pre { background: #f4f4f4; padding: 1em; overflow-x: auto; border-radius: 5px; }
+    pre code { background: none; padding: 0; }
+    table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+    th, td { border: 1px solid #ddd; padding: 0.5em; text-align: left; }
+    th { background: #f4f4f4; }
+    blockquote { border-left: 3px solid #ddd; margin: 1em 0; padding-left: 1em; color: #666; }
+  </style>
+</head>
+<body>
+<p><h1>第20章 部署与运维</h1></p><p>> <strong>本章目标</strong>：解释容器化与运维的最佳实践。
+> <strong>pi 源码对照</strong>：
+> - <code>packages/coding-agent/src/main.ts</code> — 主程序入口
+>
+> <strong>本章结束能做什么</strong>：能设计 Docker 部署方案。
+> <strong>阅读时间</strong>：约 35 分钟。</p><p>---</p><p><h2>1. 容器化</h2></p><p><h3>1.1 Dockerfile</h3></p><p><pre><code class="language-dockerfile">FROM node:22-alpine AS builder</p><p>WORKDIR /app
+COPY package<em>.json ./
+RUN npm ci</p><p>COPY . .
+RUN npm run build</p><p>FROM node:22-alpine AS runner</p><p>WORKDIR /app
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/node_modules ./node_modules
+COPY package</em>.json ./</p><p>ENV NODE_ENV=production
+ENV ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}</p><p>ENTRYPOINT ["node", "dist/main.js"]
+CMD ["--help"]
+</code></pre></p><p>---</p><p><h2>2. 健康检查</h2></p><p><h3>2.1 Health Check 端点</h3></p><p><pre><code class="language-typescript">// packages/coding-agent/src/main.ts
+export function setupHealthCheck(server: HttpServer): void {
+  server.get('/health', async (req, res) => {
+    const status = {
+      status: 'ok',
+      uptime: process.uptime(),
+      version: VERSION,
+      sessionCount: sessionManager.size(),
+    }
+    res.json(status)
+  })</p><p>  server.get('/ready', async (req, res) => {
+    // 检查 API key 是否配置
+    if (!process.env.ANTHROPIC_API_KEY) {
+      res.status(503).json({ ready: false, reason: 'API key not configured' })
+      return
+    }
+    res.json({ ready: true })
+  })
+}
+</code></pre></p><p>---</p><p><h2>3. 信号处理</h2></p><p><h3>3.1 Graceful Shutdown</h3></p><p><pre><code class="language-typescript">// packages/coding-agent/src/main.ts
+export function setupSignalHandlers(): void {
+  const shutdown = async (signal: string) => {
+    console.log(<code>Received ${signal}, shutting down gracefully...</code>)</p><p>    // 停止接收新请求
+    server.close()</p><p>    // 保存活跃 session
+    await sessionManager.saveAll()</p><p>    // 刷新待处理的 transcript
+    await transcriptManager.flush()</p><p>    process.exit(0)
+  }</p><p>  process.on('SIGTERM', () => shutdown('SIGTERM'))
+  process.on('SIGINT', () => shutdown('SIGINT'))
+}
+</code></pre></p><p>---</p><p><h2>4. 日志与监控</h2></p><p><h3>4.1 结构化日志</h3></p><p><pre><code class="language-typescript">// packages/coding-agent/src/core/telemetry.ts
+export interface LogEntry {
+  timestamp: string
+  level: 'debug' | 'info' | 'warn' | 'error'
+  service: string
+  traceId?: string
+  message: string
+  attributes?: Record<string, unknown>
+}</p><p>export function log(
+  level: LogEntry['level'],
+  message: string,
+  attributes?: Record<string, unknown>,
+): void {
+  const entry: LogEntry = {
+    timestamp: new Date().toISOString(),
+    level,
+    service: 'pi-agent',
+    traceId: getCurrentTraceId(),
+    message,
+    attributes,
+  }</p><p>  if (level === 'error') {
+    console.error(JSON.stringify(entry))
+  } else {
+    console.log(JSON.stringify(entry))
+  }
+}
+</code></pre></p><p>---</p><p>> <strong>下一步阅读</strong>：<a href="./chapter-21-rl-integration.md">第21章 RL 集成蓝图</a> — 强化学习对接。
+</p>
+</body>
+</html>

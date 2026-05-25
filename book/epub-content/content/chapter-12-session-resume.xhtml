@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <title>第12章 Session Resume</title>
+  <style>
+    body { font-family: 'Noto Sans SC', sans-serif; line-height: 1.8; margin: 1em; }
+    h1, h2, h3, h4 { color: #333; }
+    code { background: #f4f4f4; padding: 0.2em 0.4em; border-radius: 3px; }
+    pre { background: #f4f4f4; padding: 1em; overflow-x: auto; border-radius: 5px; }
+    pre code { background: none; padding: 0; }
+    table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+    th, td { border: 1px solid #ddd; padding: 0.5em; text-align: left; }
+    th { background: #f4f4f4; }
+    blockquote { border-left: 3px solid #ddd; margin: 1em 0; padding-left: 1em; color: #666; }
+  </style>
+</head>
+<body>
+<p><h1>第12章 Session Resume：会话恢复</h1></p><p>> <strong>本章目标</strong>：解释 transcript、history 与 sidechain 如何让长任务可恢复。
+> <strong>pi 源码对照</strong>：
+> - <code>packages/agent/src/harness/session/jsonl-repo.ts</code> — JSONL transcript
+> - <code>packages/agent/src/harness/session/jsonl-storage.ts</code> — JSONL 存储
+> - <code>packages/coding-agent/src/modes/rpc/jsonl.ts</code> — RPC 模式 JSONL
+>
+> <strong>本章结束能做什么</strong>：能实现 JSONL transcript、resume、subagent sidechain。
+> <strong>阅读时间</strong>：约 25 分钟。</p><p>---</p><p><h2>1. 为什么需要会话持久化</h2></p><p>长任务可能跨越几小时、几天。如果每次重启都从零开始：
+<ul><li>累计的 cost / tokens 丢失</li>
+<li>历史对话丢失</li>
+<li>待办列表丢失</li>
+<li>记忆 cursor 丢失</li>
+</ul>
+---</p><p><h2>2. 三套持久化机制</h2></p><p><table><thead><tr><th>机制</th><th>作用</th><th>持久化位置</th></tr></thead><tbody><tr><td><strong>transcript</strong></td><td>完整 message 序列</td><td><code>~/.claude/projects/<slug>/<sessionId>.jsonl</code></td></tr><tr><td><strong>history</strong></td><td>用户 prompt 历史</td><td><code>~/.claude/history.jsonl</code></td></tr><tr><td><strong>sidechain</strong></td><td>子 Agent 独立序列</td><td><code>~/.claude/projects/<slug>/<sessionId>/subagents/</code></td></tr></tbody></table>
+---</p><p><h2>3. Transcript 设计</h2></p><p><h3>3.1 JSONL 格式</h3></p><p><pre><code class="language-typescript">// packages/agent/src/harness/session/jsonl-repo.ts
+export interface TranscriptEntry {
+  type: 'user' | 'assistant' | 'tool_use' | 'tool_result' | 'summary'
+  timestamp: string
+  sessionId: string
+  data: Record<string, unknown>
+}</p><p>export class TranscriptRepository {
+  async append(entry: TranscriptEntry): Promise<void> {
+    const line = JSON.stringify(entry) + '\n'
+    await appendToFile(this.path, line)
+  }</p><p>  async load(): Promise<TranscriptEntry[]> {
+    const content = await readFile(this.path, 'utf-8')
+    return content
+      .split('\n')
+      .filter(Boolean)
+      .map(line => JSON.parse(line))
+  }
+}
+</code></pre></p><p><h3>3.2 Session 恢复</h3></p><p><pre><code class="language-typescript">// packages/agent/src/harness/session/session.ts
+export async function resumeSession(
+  sessionId: string,
+  harness: AgentHarness,
+): Promise<AgentSession> {
+  // 1. 加载 transcript
+  const transcript = await transcriptRepo.load(sessionId)</p><p>  // 2. 重建消息列表
+  const messages = transcript
+    .filter(e => e.type !== 'tool_result' || e.data.content)
+    .map(e => reconstructMessage(e))</p><p>  // 3. 恢复成本状态
+  const totalCost = transcript
+    .filter(e => e.type === 'usage')
+    .reduce((sum, e) => sum + (e.data.cost as number), 0)</p><p>  // 4. 创建恢复后的 session
+  return harness.createSession({
+    id: sessionId,
+    messages,
+    totalCost,
+  })
+}
+</code></pre></p><p>---</p><p><h2>4. Sidechain 子 Agent 轨迹</h2></p><p><h3>4.1 Sidechain 结构</h3></p><p><pre><code class="language-typescript">// packages/coding-agent/src/modes/rpc/jsonl.ts
+export interface SidechainTranscript {
+  parentSessionId: string
+  agentId: string
+  agentType: string
+  entries: TranscriptEntry[]
+}</p><p>export class SidechainManager {
+  async createSidechain(
+    parentSessionId: string,
+    agentId: string,
+  ): Promise<SidechainTranscript> {
+    const path = join(
+      this.sessionsDir,
+      parentSessionId,
+      'subagents',
+      <code>agent-${agentId}.jsonl</code>,
+    )
+    return new SidechainTranscript(parentSessionId, agentId, path)
+  }</p><p>  async appendToSidechain(
+    sidechain: SidechainTranscript,
+    entry: TranscriptEntry,
+  ): Promise<void> {
+    await sidechain.append(entry)
+  }
+}
+</code></pre></p><p>---</p><p><h2>5. 大结果引用</h2></p><p><h3>5.1 引用策略</h3></p><p><pre><code class="language-typescript">// packages/agent/src/harness/session/jsonl-storage.ts
+export interface LargeResultRef {
+  type: 'reference'
+  refId: string
+  storagePath: string
+  originalSize: number
+  truncatedSize: number
+}</p><p>export function shouldReference(
+  content: string,
+  maxInlineSize: number = 1000,
+): boolean {
+  return content.length > maxInlineSize
+}</p><p>export async function storeLargeResult(
+  sessionId: string,
+  toolUseId: string,
+  content: string,
+): Promise<LargeResultRef> {
+  const path = join(
+    this.resultsDir,
+    sessionId,
+    <code>tool-result-${toolUseId}.txt</code>,
+  )</p><p>  await writeFile(path, content, 'utf-8')</p><p>  return {
+    type: 'reference',
+    refId: toolUseId,
+    storagePath: path,
+    originalSize: content.length,
+    truncatedSize: maxInlineSize,
+  }
+}
+</code></pre></p><p>---</p><p>> <strong>下一步阅读</strong>：<a href="./chapter-13-mcp-protocol.md">第13章 MCP 协议</a> — 外部工具接入。
+</p>
+</body>
+</html>

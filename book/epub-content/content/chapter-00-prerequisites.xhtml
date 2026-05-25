@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <title>第0章 前置知识</title>
+  <style>
+    body { font-family: 'Noto Sans SC', sans-serif; line-height: 1.8; margin: 1em; }
+    h1, h2, h3, h4 { color: #333; }
+    code { background: #f4f4f4; padding: 0.2em 0.4em; border-radius: 3px; }
+    pre { background: #f4f4f4; padding: 1em; overflow-x: auto; border-radius: 5px; }
+    pre code { background: none; padding: 0; }
+    table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+    th, td { border: 1px solid #ddd; padding: 0.5em; text-align: left; }
+    th { background: #f4f4f4; }
+    blockquote { border-left: 3px solid #ddd; margin: 1em 0; padding-left: 1em; color: #666; }
+  </style>
+</head>
+<body>
+<p><h1>第0章 前置知识：进入 Agent 世界的 6 把钥匙</h1></p><p>> <strong>本章目标</strong>：补齐进入 Agent 领域的最小知识。
+> <strong>pi 源码对照</strong>：
+> - <code>packages/ai/src/</code> — AI API 客户端（Streaming SSE 解析）
+> - <code>packages/agent/src/agent-loop.ts</code> — AsyncGenerator 状态机模式
+> - <code>packages/coding-agent/src/core/tools/</code> — 工具系统（Zod 校验）
+> - <code>packages/coding-agent/src/utils/frontmatter.ts</code> — frontmatter 解析
+>
+> <strong>本章结束能做什么</strong>：能读懂后续章节中的消息协议、工具调用、AsyncGenerator、Zod 和 frontmatter。
+> <strong>阅读时间</strong>：约 60 分钟，含 6 个动手练习。</p><p>---</p><p><h2>0.1 为什么需要这章</h2></p><p>后续章节基于真实 TypeScript 源码的逐行剖析，假设读者熟悉：</p><p><ul><li>LLM 消息协议（role、content、tool_use、tool_result）</li>
+<li>AsyncGenerator 与 <code>yield</code> 状态机</li>
+<li>Zod 运行时校验</li>
+<li>Markdown + frontmatter 的配置写法</li>
+</ul>
+如果以上任何一项不熟悉，本章是<strong>前置补课</strong>。每节配一个最小练习，跑通即可继续。</p><p>---</p><p><h2>1. LLM API 基础：从一次 Chat Completion 说起</h2></p><p><h3>1.1 Messages API 的最小心智模型</h3></p><p>主流 LLM API 都把对话建模为「消息序列」：</p><p><pre><code class="language-typescript">type Message =
+  | { role: 'system'; content: string }      // 行为约束、身份定义（System Prompt）
+  | { role: 'user';   content: ContentBlock[] }  // 用户输入或工具结果
+  | { role: 'assistant'; content: ContentBlock[] } // 模型回复
+</code></pre></p><p><code>ContentBlock</code> 可以是文本、图片、思考过程，也可以是工具调用和工具结果：</p><p><pre><code class="language-typescript">type ContentBlock =
+  | { type: 'text'; text: string }
+  | { type: 'image'; source: { type: 'base64' | 'url'; data: string } }
+  | { type: 'thinking'; thinking: string }           // 推理链（部分模型支持）
+  | { type: 'tool_use'; id: string; name: string; input: object }
+  | { type: 'tool_result'; tool_use_id: string; content: string | ContentBlock[] }
+</code></pre></p><p><strong>最关键的不变式</strong>：每个 <code>tool_use</code> 必须有配对的 <code>tool_result</code>，且 <code>tool_use_id</code> 一致。</p><p><h3>1.2 流式响应（SSE）</h3></p><p>Agent 必须能<strong>边收边处理</strong>：模型一边生成文本，Agent 一边把工具调用 dispatch 出去。这通过 SSE（Server-Sent Events）实现：</p><p><pre><code class="language-">event: message_start
+data: {"type":"message_start","message":{...}}</p><p>event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}</p><p>event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}</p><p>event: message_delta
+data: {"type":"message_delta","delta":{"stop_reason":"end_turn"}}</p><p>event: message_stop
+data: {"type":"message_stop"}
+</code></pre></p><p><code>stop_reason</code> 是 Agent Loop 退出路径判断的核心字段：
+<ul><li><code>end_turn</code>：模型自主结束</li>
+<li><code>tool_use</code>：模型想调用工具，Agent 需要执行后回喂 <code>tool_result</code></li>
+<li><code>max_tokens</code>：达到上限（需要主动续写或返回错误）</li>
+<li><code>stop_sequence</code>：命中停止序列</li>
+</ul>
+<h3>1.3 prompt cache</h3></p><p>主流 API 支持 <strong>prompt prefix caching</strong>：用 <code>cache_control: { type: 'ephemeral' }</code> 标记某段内容可缓存。</p><p><pre><code class="language-json">{
+  "usage": {
+    "input_tokens": 120,
+    "cache_creation_input_tokens": 8000,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 456
+  }
+}
+</code></pre></p><p>缓存策略：「<strong>静态前缀 + 动态后缀</strong>」——不变的内容（系统指令、工具定义）放前面打 <code>cache_control</code>，变化的内容（用户消息）放后面。</p><p>---</p><p><h2>2. Function Calling / Tool Use 协议</h2></p><p><h3>2.1 工具定义</h3></p><p>工具定义是 JSON Schema 描述：</p><p><pre><code class="language-json">{
+  "name": "get_weather",
+  "description": "Get current weather of a city",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "city": { "type": "string" },
+      "unit": { "type": "string", "enum": ["celsius", "fahrenheit"] }
+    },
+    "required": ["city"]
+  }
+}
+</code></pre></p><p><h3>2.2 完整调用闭环</h3></p><p><pre><code class="language-">1. Agent → API: 发送 messages + tools
+2. API → Agent: stop_reason=tool_use，content 含 { tool_use, id: T1, name: "get_weather" }
+3. Agent 本地执行工具，得到结果 "22°C, sunny"
+4. Agent → API: 追加 { role: 'user', content: [{ tool_result, tool_use_id: T1, content: "22°C" }] }
+5. API → Agent: 模型基于工具结果继续生成
+</code></pre></p><p><strong>并行工具调用</strong>：一次 assistant 消息可以包含多个 <code>tool_use</code> block，Agent 应<strong>同时执行</strong>它们。</p><p><h3>2.3 pi 源码对照</h3></p><p>pi 中的工具系统在 <code>packages/coding-agent/src/core/tools/</code>：</p><p><pre><code class="language-typescript">// packages/coding-agent/src/core/tools/index.ts
+export interface Tool {
+  name: string
+  description: string
+  inputSchema: ZodType
+  execute(input: unknown): Promise<ToolResult>
+}
+</code></pre></p><p>---</p><p><h2>3. AsyncGenerator：用 yield 写状态机</h2></p><p><h3>3.1 为什么 Agent Loop 用 Generator</h3></p><p>Agent 是一个「边跑边产生事件」的过程。AsyncGenerator 让外部（UI/测试/日志）都能用同一套 <code>for await</code> 语法精确观察每一步。</p><p><pre><code class="language-typescript">async function<em> simpleLoop(): AsyncGenerator<string, number> {
+  yield 'started'
+  await sleep(100)
+  yield 'middle'
+  return 42
+}</p><p>for await (const event of simpleLoop()) {
+  console.log(event) // started, middle
+}
+</code></pre></p><p><h3>3.2 pi 源码对照</h3></p><p>pi 的 Agent Loop 使用 AsyncGenerator 模式暴露事件：</p><p><pre><code class="language-typescript">// packages/agent/src/agent-loop.ts
+export async function</em> runAgentLoop(
+  harness: AgentHarness,
+  session: AgentSession,
+): AsyncGenerator<AgentEvent, AgentResult> {
+  let turnCount = 0
+  while (true) {
+    yield { type: 'turn_start', turnCount }
+    const result = yield<em> executeTurn(harness, session)
+    if (result.done) return result.value
+    turnCount++
+  }
+}
+</code></pre></p><p>---</p><p><h2>4. TypeScript 类型系统精要 + Zod 运行时校验</h2></p><p><h3>4.1 Zod：API 边界的运行时盾牌</h3></p><p><strong>LLM 输出工具调用参数时，不能信任 TS 类型</strong>——它在编译期就被擦除了。运行时必须用 Zod 校验：</p><p><pre><code class="language-typescript">import { z } from 'zod'</p><p>const ReadToolInput = z.object({
+  file_path: z.string().min(1),
+  offset: z.number().int().nonnegative().optional(),
+  limit: z.number().int().positive().optional(),
+})</p><p>// 工具执行入口
+const parsed = ReadToolInput.safeParse(rawInput)
+if (!parsed.success) {
+  return toolError(parsed.error.format())
+}
+const input: ReadToolInput = parsed.data
+</code></pre></p><p><strong>为什么用 <code>safeParse</code> 而不是 <code>parse</code></strong>：<code>safeParse</code> 返回 <code>{ success: false, error }</code>，可以把结构化错误回喂给模型让它自我修正。</p><p><h3>4.2 pi 源码对照</h3></p><p>pi 的工具系统广泛使用 Zod 进行输入校验：</p><p><pre><code class="language-typescript">// packages/coding-agent/src/core/tools/read.ts
+export const ReadArgs = z.object({
+  file_path: z.string(),
+  offset: z.number().int().nonnegative().optional(),
+  limit: z.number().int().positive().optional(),
+})
+</code></pre></p><p>---</p><p><h2>5. 文件系统作为数据库：Markdown + Frontmatter</h2></p><p><h3>5.1 为什么不用数据库</h3></p><p>pi 的所有配置、记忆、命令、技能都存在文件系统上的 Markdown 文件里：</p><p><table><thead><tr><th>维度</th><th>Markdown 文件系统</th><th>SQLite</th></tr></thead><tbody><tr><td>透明度</td><td>用户可直接编辑</td><td>需要专用工具</td></tr><tr><td>版本控制</td><td>天然 git 友好</td><td>binary 不可读</td></tr><tr><td>启动开销</td><td>读几个文件</td><td>进程初始化</td></tr></tbody></table>
+<h3>5.2 frontmatter 写法</h3></p><p><pre><code class="language-markdown">---
+name: my-skill
+description: Does X when Y
+allowed-tools:
+  - Read
+  - Bash
+model: claude-3-5-haiku
+---</p><p><h1>Skill body</h1></p><p>Detailed instructions here...
+</code></pre></p><p><h3>5.3 pi 源码对照</h3></p><p><pre><code class="language-typescript">// packages/coding-agent/src/utils/frontmatter.ts
+export function parseFrontmatter(content: string): {
+  data: Record<string, unknown>
+  content: string
+} {
+  const match = content.match(/^---\n([\s\S]</em>?)\n---\n([\s\S]*)$/)
+  if (!match) return { data: {}, content }
+  return {
+    data: yaml.parse(match[1]),
+    content: match[2],
+  }
+}
+</code></pre></p><p><h3>5.4 多级配置合并</h3></p><p>同一类配置分布在多个层级，后加载的覆盖先加载的同名条目，但 deny 类规则永远累加。</p><p>---</p><p><h2>6. 练习</h2></p><p>1. 调用一次 LLM API：发送 system + user message，打印 stop_reason、input_tokens、output_tokens
+2. 手写一个 <code>get_weather</code> 工具完整闭环
+3. 把 <code>miniLoop</code> 跑起来，让它接收 <code>abortSignal</code>
+4. 用 Zod 写一个 <code>BashToolInput</code> schema 并导出 JSON Schema
+5. 写一个 Ink TUI 组件
+6. 写一个 markdown 解析器，提取 frontmatter 并合并 <code>Map<string, SkillDef></code></p><p>---</p><p>> <strong>下一步阅读</strong>：<a href="./chapter-01-architecture-overview.md">第1章 架构总览</a> — 7 层 Harness 架构总览。
+</p>
+</body>
+</html>

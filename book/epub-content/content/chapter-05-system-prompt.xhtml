@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <title>第5章 System Prompt</title>
+  <style>
+    body { font-family: 'Noto Sans SC', sans-serif; line-height: 1.8; margin: 1em; }
+    h1, h2, h3, h4 { color: #333; }
+    code { background: #f4f4f4; padding: 0.2em 0.4em; border-radius: 3px; }
+    pre { background: #f4f4f4; padding: 1em; overflow-x: auto; border-radius: 5px; }
+    pre code { background: none; padding: 0; }
+    table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+    th, td { border: 1px solid #ddd; padding: 0.5em; text-align: left; }
+    th { background: #f4f4f4; }
+    blockquote { border-left: 3px solid #ddd; margin: 1em 0; padding-left: 1em; color: #666; }
+  </style>
+</head>
+<body>
+<p><h1>第5章 System Prompt：行为宪法</h1></p><p>> <strong>本章目标</strong>：解释 System Prompt 如何约束 Agent 行为并参与缓存。
+> <strong>pi 源码对照</strong>：
+> - <code>packages/coding-agent/src/core/system-prompt.ts</code> — System Prompt 构建
+> - <code>packages/coding-agent/src/core/prompt-templates.ts</code> — Prompt 模板
+> - <code>packages/agent/src/harness/system-prompt.ts</code> — Harness Prompt
+>
+> <strong>本章结束能做什么</strong>：能把行为规范、工具规则、动态环境和 Skill 指令组织成可维护 prompt。
+> <strong>阅读时间</strong>：约 20 分钟。</p><p>---</p><p><h2>1. System Prompt 的角色</h2></p><p>System Prompt 是 Agent 的"宪法"——它定义了 AI 的能力边界、行为约束和交互范式。</p><p><h3>1.1 核心组成</h3></p><p><pre><code class="language-typescript">// packages/coding-agent/src/core/system-prompt.ts
+export interface SystemPromptSections {
+  // 静态区（可缓存）
+  intro: string           // 身份定义
+  systemRules: string    // 系统级行为规则
+  toolGuidelines: string // 工具使用契约
+  toneAndStyle: string   // 语气风格</p><p>  // 动态区（不可缓存）
+  sessionGuidance: string // 会话特定指导
+  memoryContext: string   // 记忆上下文
+  mcpInstructions: string // MCP 指令
+  scratchpad: string     // 草稿区
+}
+</code></pre></p><p>---</p><p><h2>2. 模块化构建</h2></p><p><h3>2.1 构建入口</h3></p><p><pre><code class="language-typescript">// packages/coding-agent/src/core/system-prompt.ts
+export function buildSystemPrompt(
+  config: PromptConfig,
+): string[] {
+  const sections: string[] = []</p><p>  // 静态区（可缓存）
+  sections.push(buildIntro(config.model))
+  sections.push(buildSystemRules())
+  sections.push(buildToolGuidelines(config.tools))
+  sections.push(buildToneAndStyle(config.outputStyle))</p><p>  // 动态区（不可缓存）
+  sections.push(buildSessionGuidance(config.session))
+  sections.push(buildMemoryContext(config.memory))
+  sections.push(buildMcpInstructions(config.mcpServers))</p><p>  return sections
+}
+</code></pre></p><p><h3>2.2 缓存边界</h3></p><p><pre><code class="language-">┌─────────────────────────────────────────────────────────────┐
+│  静态区（可缓存）                                            │
+│  - 身份定义                                                 │
+│  - 工具契约                                                 │
+│  - 语气风格                                                 │
+└─────────────────────────────────────────────────────────────┘
+                        ↓
+         SYSTEM_PROMPT_DYNAMIC_BOUNDARY
+                        ↓
+┌─────────────────────────────────────────────────────────────┐
+│  动态区（不可缓存）                                          │
+│  - 会话特定指导                                              │
+│  - 记忆上下文                                               │
+│  - MCP 指令                                                │
+└─────────────────────────────────────────────────────────────┘
+</code></pre></p><p>---</p><p><h2>3. 工具契约</h2></p><p><h3>3.1 工具优先原则</h3></p><p><pre><code class="language-typescript">// packages/coding-agent/src/core/prompt-templates.ts
+export const TOOL_GUIDELINES = <code>
+To read files use the Read tool instead of cat, head, tail, or sed.
+To edit files use the Edit tool instead of sed or awk.
+To create files use the Write tool instead of cat with heredoc.
+To search for files use the Glob tool instead of find or ls.
+To search the content of files use Grep instead of grep.</p><p>Reserve using Bash exclusively for system commands that require shell execution.
+</code>
+</code></pre></p><p><h3>3.2 风险管控原则</h3></p><p><pre><code class="language-typescript">// packages/coding-agent/src/core/prompt-templates.ts
+export const RISK_GUIDELINES = <code>
+Carefully consider the reversibility and blast radius of actions.</p><p>Generally you can freely take local, reversible actions like editing files.
+But for actions that are hard to reverse or affect shared systems, check with the user before proceeding.</p><p>Examples of risky actions that warrant user confirmation:
+<ul><li>Destructive: deleting files/branches, dropping database tables</li>
+<li>Hard-to-reverse: force-pushing, git reset --hard</li>
+<li>Shared state: pushing code, creating PRs, sending messages</li>
+</ul></code>
+</code></pre></p><p>---</p><p><h2>4. Skill 注入</h2></p><p><h3>4.1 Skill 加载时机</h3></p><p><pre><code class="language-typescript">// packages/coding-agent/src/core/skills.ts
+export function injectSkillInstructions(
+  skills: Skill[],
+): string[] {
+  return skills.map(skill => <code>
+<h2>Skill: ${skill.name}</h2></p><p>${skill.description}</p><p>${skill.instructions}
+</code>)
+}
+</code></pre></p><p>---</p><p><h2>5. pi 源码实现</h2></p><p><pre><code class="language-typescript">// packages/agent/src/harness/system-prompt.ts
+export class SystemPromptBuilder {
+  private sections: string[] = []</p><p>  addStaticSection(content: string): this {
+    this.sections.push(content)
+    return this
+  }</p><p>  addDynamicSection(content: string): this {
+    this.sections.push(content)
+    return this
+  }</p><p>  build(): string[] {
+    return this.sections
+  }</p><p>  toString(): string {
+    return this.sections.join('\n\n')
+  }
+}
+</code></pre></p><p>---</p><p>> <strong>下一步阅读</strong>：<a href="./chapter-06-build-from-zero.md">第6章 从零构建最小 Agent</a> — 动手实践。
+</p>
+</body>
+</html>

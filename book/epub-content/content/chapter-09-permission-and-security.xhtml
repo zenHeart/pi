@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <title>第9章 权限与安全</title>
+  <style>
+    body { font-family: 'Noto Sans SC', sans-serif; line-height: 1.8; margin: 1em; }
+    h1, h2, h3, h4 { color: #333; }
+    code { background: #f4f4f4; padding: 0.2em 0.4em; border-radius: 3px; }
+    pre { background: #f4f4f4; padding: 1em; overflow-x: auto; border-radius: 5px; }
+    pre code { background: none; padding: 0; }
+    table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+    th, td { border: 1px solid #ddd; padding: 0.5em; text-align: left; }
+    th { background: #f4f4f4; }
+    blockquote { border-left: 3px solid #ddd; margin: 1em 0; padding-left: 1em; color: #666; }
+  </style>
+</head>
+<body>
+<p><h1>第9章 权限与安全</h1></p><p>> <strong>本章目标</strong>：解释 Agent 操作真实文件系统和 shell 时的权限边界。
+> <strong>pi 源码对照</strong>：
+> - <code>packages/coding-agent/src/core/exec.ts</code> — 执行引擎
+> - <code>packages/coding-agent/src/core/bash-executor.ts</code> — Bash 执行器
+> - <code>packages/agent/src/harness/agent-harness.ts</code> — Harness 权限接口
+>
+> <strong>本章结束能做什么</strong>：能设计 allow/deny/ask、模式切换和规则来源。
+> <strong>阅读时间</strong>：约 25 分钟。</p><p>---</p><p><h2>1. 权限模型</h2></p><p><h3>1.1 权限模式</h3></p><p><pre><code class="language-typescript">// packages/agent/src/harness/types.ts
+export type PermissionMode =
+  | 'default'     // 交互式弹窗
+  | 'acceptEdits' // 自动接受文件编辑
+  | 'bypassPermissions' // 完全绕过
+  | 'dontAsk'    // 自动拒绝
+  | 'plan'       // 计划模式（只读）
+  | 'auto'       // AI 分类器自动审批
+</code></pre></p><p><h3>1.2 权限决策</h3></p><p><pre><code class="language-typescript">// packages/agent/src/harness/agent-harness.ts
+export interface PermissionRequest {
+  tool: string
+  input: object
+  risk: 'low' | 'medium' | 'high'
+  reason?: string
+}</p><p>export type PermissionDecision = 'allow' | 'deny' | 'ask'</p><p>export function evaluatePermission(
+  request: PermissionRequest,
+  mode: PermissionMode,
+  rules: PermissionRule[],
+): PermissionDecision {
+  switch (mode) {
+    case 'bypassPermissions':
+      return 'allow'
+    case 'dontAsk':
+      return 'deny'
+    case 'plan':
+      return 'allow' // 计划模式只读
+    case 'acceptEdits':
+      if (request.tool === 'Edit' || request.tool === 'Write') {
+        return 'allow'
+      }
+      return 'ask'
+    case 'auto':
+      return autoClassify(request)
+    default:
+      return 'ask'
+  }
+}
+</code></pre></p><p>---</p><p><h2>2. 风险分类</h2></p><p><h3>2.1 工具风险等级</h3></p><p><pre><code class="language-typescript">// packages/coding-agent/src/core/exec.ts
+export const TOOL_RISK_LEVELS: Record<string, 'low' | 'medium' | 'high'> = {
+  Read: 'low',
+  Glob: 'low',
+  Grep: 'low',
+  WebFetch: 'low',
+  Edit: 'medium',
+  Write: 'medium',
+  Bash: 'high',
+  Agent: 'high',
+  Skill: 'high',
+}
+</code></pre></p><p><h3>2.2 内容风险检测</h3></p><p><pre><code class="language-typescript">// packages/coding-agent/src/core/exec.ts
+export function detectDestructivePatterns(
+  command: string,
+): string[] {
+  const patterns = [
+    { regex: /rm\s+-rf/i, name: 'Recursive delete' },
+    { regex: /drop\s+database/i, name: 'Database drop' },
+    { regex: /git\s+push\s+--force/i, name: 'Force push' },
+    { regex: /\|\s*sudo\s+/i, name: 'Sudo pipe' },
+  ]</p><p>  return patterns
+    .filter(p => p.regex.test(command))
+    .map(p => p.name)
+}
+</code></pre></p><p>---</p><p><h2>3. 权限流水线</h2></p><p><pre><code class="language-">Tool Call → Risk Classification → Rule Matching → Mode Dispatch → Decision
+                ↓                    ↓               ↓              ↓
+           低/中/高风险          deny/allow      6种模式      allow/deny/ask
+</code></pre></p><p><h3>3.1 执行入口</h3></p><p><pre><code class="language-typescript">// packages/coding-agent/src/core/exec.ts
+export async function executeWithPermission(
+  tool: string,
+  input: object,
+  context: ExecutionContext,
+): Promise<ExecutionResult> {
+  // 1. 风险分类
+  const risk = classifyRisk(tool, input)</p><p>  // 2. 获取决策
+  const decision = evaluatePermission(
+    { tool, input, risk },
+    context.permissionMode,
+    context.rules,
+  )</p><p>  // 3. 执行或拒绝
+  switch (decision) {
+    case 'allow':
+      return executeTool(tool, input)
+    case 'deny':
+      return { success: false, error: 'Permission denied' }
+    case 'ask':
+      return requestUserPermission({ tool, input, risk })
+  }
+}
+</code></pre></p><p>---</p><p><h2>4. 提示注入防御</h2></p><p><h3>4.1 注入模式识别</h3></p><p><pre><code class="language-typescript">// packages/coding-agent/src/core/exec.ts
+export function detectPromptInjection(
+  content: string,
+): boolean {
+  const injectionPatterns = [
+    /ignore\s+(all\s+)?previous\s+instructions/i,
+    /disregard\s+(your\s+)?(system|previous)\s+(instruction|prompt)/i,
+    /you\s+are\s+now\s+(a|an)\s+(different|new)\s+(AI|assistant)/i,
+    /forget\s+(everything|all)\s+(about|you\s+know)/i,
+  ]</p><p>  return injectionPatterns.some(p => p.test(content))
+}
+</code></pre></p><p><h3>4.2 防御策略</h3></p><p><pre><code class="language-typescript">// packages/coding-agent/src/core/exec.ts
+export function sanitizeToolResult(
+  content: string,
+): string {
+  // 移除可能的注入模式
+  let sanitized = content</p><p>  for (const pattern of INJECTION_PATTERNS) {
+    sanitized = sanitized.replace(pattern, '[filtered]')
+  }</p><p>  return sanitized
+}
+</code></pre></p><p>---</p><p>> <strong>下一步阅读</strong>：<a href="./chapter-10-hook-system.md">第10章 Hook 系统</a> — 生命周期注入。
+</p>
+</body>
+</html>

@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <title>第19章 Eval 平台实操</title>
+  <style>
+    body { font-family: 'Noto Sans SC', sans-serif; line-height: 1.8; margin: 1em; }
+    h1, h2, h3, h4 { color: #333; }
+    code { background: #f4f4f4; padding: 0.2em 0.4em; border-radius: 3px; }
+    pre { background: #f4f4f4; padding: 1em; overflow-x: auto; border-radius: 5px; }
+    pre code { background: none; padding: 0; }
+    table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+    th, td { border: 1px solid #ddd; padding: 0.5em; text-align: left; }
+    th { background: #f4f4f4; }
+    blockquote { border-left: 3px solid #ddd; margin: 1em 0; padding-left: 1em; color: #666; }
+  </style>
+</head>
+<body>
+<p><h1>第19章 Eval 平台实操</h1></p><p>> <strong>本章目标</strong>：把 Eval 理论落到 runner、transcript、viewer 和 CI artifact。
+> <strong>pi 源码对照</strong>：
+> - <code>packages/coding-agent/examples/mini-agent/src/evalRunner.ts</code> — Eval Runner
+> - <code>packages/coding-agent/examples/mini-agent/src/viewer.ts</code> — Transcript Viewer
+> - <code>packages/coding-agent/examples/mini-agent/src/transcript.ts</code> — Transcript 处理
+>
+> <strong>本章结束能做什么</strong>：能用同一份 transcript 产出结果、回放视图和失败归因。
+> <strong>阅读时间</strong>：约 40 分钟。</p><p>---</p><p><h2>1. Eval 数据结构</h2></p><p><h3>1.1 EvalCase</h3></p><p><pre><code class="language-typescript">// examples/mini-agent/src/evalRunner.ts
+export interface EvalCase {
+  id: string
+  name: string
+  description: string
+  input: string
+  expected: EvalAssertion[]
+  unacceptable?: string[]
+}</p><p>export interface EvalAssertion {
+  type: 'contains' | 'regex' | 'json' | 'file_exists'
+  value: string
+  description: string
+}</p><p>export interface EvalResult {
+  caseId: string
+  passed: boolean
+  score: number
+  output: string
+  assertions: AssertionResult[]
+  cost: number
+  duration: number
+}
+</code></pre></p><p>---</p><p><h2>2. Eval Runner</h2></p><p><h3>2.1 核心实现</h3></p><p><pre><code class="language-typescript">// examples/mini-agent/src/evalRunner.ts
+export async function runEvalCase(
+  agent: MiniAgent,
+  evalCase: EvalCase,
+): Promise<EvalResult> {
+  const startTime = Date.now()</p><p>  // 运行 Agent
+  const output = await agent.run(evalCase.input)</p><p>  // 评估结果
+  const assertionResults: AssertionResult[] = []
+  for (const assertion of evalCase.expected) {
+    const result = await evaluateAssertion(output, assertion)
+    assertionResults.push(result)
+  }</p><p>  const passed = assertionResults.every(r => r.passed)
+  const score = passed ? 1 : 0</p><p>  return {
+    caseId: evalCase.id,
+    passed,
+    score,
+    output,
+    assertions: assertionResults,
+    cost: agent.totalCost,
+    duration: Date.now() - startTime,
+  }
+}
+</code></pre></p><p>---</p><p><h2>3. Transcript Viewer</h2></p><p><h3>3.1 Viewer 实现</h3></p><p><pre><code class="language-typescript">// examples/mini-agent/src/viewer.ts
+export function generateTranscriptHtml(
+  transcript: TranscriptEntry[],
+): string {
+  const rows = transcript.map(entry => {
+    switch (entry.type) {
+      case 'user':
+        return <code><div class="user-message">${escapeHtml(entry.data.content)}</div></code>
+      case 'assistant':
+        return <code><div class="assistant-message">${escapeHtml(entry.data.content)}</div></code>
+      case 'tool_use':
+        return <code><div class="tool-call">
+          <span class="tool-name">${entry.data.tool}</span>
+          <pre>${escapeHtml(JSON.stringify(entry.data.input))}</pre>
+        </div></code>
+      case 'tool_result':
+        return <code><div class="tool-result">
+          <pre>${escapeHtml(entry.data.content)}</pre>
+        </div></code>
+    }
+  }).join('\n')</p><p>  return <code><!DOCTYPE html>
+<html>
+<head><title>Transcript Viewer</title>
+<style>${VIEWER_CSS}</style></head>
+<body>${rows}</body>
+</html></code>
+}
+</code></pre></p><p>---</p><p><h2>4. CI 集成</h2></p><p><h3>4.1 Regression Gate</h3></p><p><pre><code class="language-typescript">// examples/mini-agent/src/evalRunner.ts
+export async function runRegressionGate(
+  results: EvalResult[],
+  threshold: number = 0.8,
+): Promise<boolean> {
+  const passedRate = results.filter(r => r.passed).length / results.length</p><p>  if (passedRate < threshold) {
+    console.error(<code>Regression: ${passedRate <em> 100}% < ${threshold </em> 100}%</code>)
+    return false
+  }</p><p>  return true
+}
+</code></pre></p><p>---</p><p>> <strong>下一步阅读</strong>：<a href="./chapter-20-deployment-and-ops.md">第20章 部署与运维</a> — 容器化部署。
+</p>
+</body>
+</html>

@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <title>第21章 RL 集成蓝图</title>
+  <style>
+    body { font-family: 'Noto Sans SC', sans-serif; line-height: 1.8; margin: 1em; }
+    h1, h2, h3, h4 { color: #333; }
+    code { background: #f4f4f4; padding: 0.2em 0.4em; border-radius: 3px; }
+    pre { background: #f4f4f4; padding: 1em; overflow-x: auto; border-radius: 5px; }
+    pre code { background: none; padding: 0; }
+    table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+    th, td { border: 1px solid #ddd; padding: 0.5em; text-align: left; }
+    th { background: #f4f4f4; }
+    blockquote { border-left: 3px solid #ddd; margin: 1em 0; padding-left: 1em; color: #666; }
+  </style>
+</head>
+<body>
+<p><h1>第21章 RL 集成蓝图</h1></p><p>> <strong>本章目标</strong>：解释 RL 训练对接的接口契约和 trajectory 导出。
+> <strong>pi 源码对照</strong>：
+> - <code>packages/coding-agent/examples/mini-agent/src/exportTrajectory.ts</code> — Trajectory 导出
+>
+> <strong>本章结束能做什么</strong>：能理解 RL trajectory、reward 设计接口。
+> <strong>阅读时间</strong>：约 45 分钟。</p><p>---</p><p><h2>1. RL 集成概述</h2></p><p>强化学习（RL）用于优化 Agent 的决策策略。核心接口：</p><p><pre><code class="language-">Agent → Trajectory → Reward 计算 → 训练队列 → RL 训练
+</code></pre></p><p>---</p><p><h2>2. Trajectory 导出</h2></p><p><h3>2.1 Trajectory 格式</h3></p><p><pre><code class="language-typescript">// examples/mini-agent/src/exportTrajectory.ts
+export interface TrajectoryStep {
+  role: 'user' | 'assistant' | 'tool'
+  content: string
+  toolCall?: {
+    name: string
+    input: object
+  }
+  toolResult?: {
+    content: string
+    success: boolean
+  }
+  metadata: {
+    timestamp: number
+    tokens: number
+    cost: number
+  }
+}</p><p>export interface Trajectory {
+  sessionId: string
+  taskDescription: string
+  steps: TrajectoryStep[]
+  finalOutcome: 'success' | 'failure' | 'aborted'
+}
+</code></pre></p><p><h3>2.2 导出实现</h3></p><p><pre><code class="language-typescript">// examples/mini-agent/src/exportTrajectory.ts
+export async function exportTrajectory(
+  session: AgentSession,
+  outputPath: string,
+): Promise<void> {
+  const trajectory: Trajectory = {
+    sessionId: session.id,
+    taskDescription: session.taskDescription,
+    steps: session.transcript.map(entry => ({
+      role: entry.type,
+      content: entry.data.content ?? '',
+      ...(entry.type === 'tool_use' && {
+        toolCall: { name: entry.data.tool, input: entry.data.input },
+      }),
+      ...(entry.type === 'tool_result' && {
+        toolResult: { content: entry.data.content, success: !entry.data.error },
+      }),
+      metadata: {
+        timestamp: new Date(entry.timestamp).getTime(),
+        tokens: entry.data.tokens ?? 0,
+        cost: entry.data.cost ?? 0,
+      },
+    })),
+    finalOutcome: session.outcome,
+  }</p><p>  await writeFile(outputPath, JSON.stringify(trajectory, null, 2))
+}
+</code></pre></p><p>---</p><p><h2>3. Reward 设计</h2></p><p><h3>3.1 Reward 接口</h3></p><p><pre><code class="language-typescript">// examples/mini-agent/src/exportTrajectory.ts
+export interface RewardSignal {
+  trajectoryId: string
+  finalReward: number
+  components: {
+    taskCompletion: number      // 0-1, 任务是否完成
+    efficiency: number         // -1 to 1, token 效率
+    safety: number            // 0 or penalty, 是否有安全违规
+    humanPreference?: number   // -1 to 1, 人类偏好
+  }
+  metadata: {
+    evaluator: string
+    timestamp: number
+  }
+}
+</code></pre></p><p>---</p><p><h2>4. 训练接口</h2></p><p><h3>4.1 训练数据格式</h3></p><p><pre><code class="language-typescript">// examples/mini-agent/src/exportTrajectory.ts
+export interface TrainingExample {
+  trajectory: Trajectory
+  reward: RewardSignal
+  policy: {
+    modelName: string
+    systemPrompt: string
+    tools: string[]
+  }
+}
+</code></pre></p><p>---</p><p>> <strong>下一步阅读</strong>：<a href="./chapter-22-interview-cheatsheet.md">第22章 面试速查</a> — 面试准备。
+</p>
+</body>
+</html>

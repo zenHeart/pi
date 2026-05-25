@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <title>第11章 记忆系统</title>
+  <style>
+    body { font-family: 'Noto Sans SC', sans-serif; line-height: 1.8; margin: 1em; }
+    h1, h2, h3, h4 { color: #333; }
+    code { background: #f4f4f4; padding: 0.2em 0.4em; border-radius: 3px; }
+    pre { background: #f4f4f4; padding: 1em; overflow-x: auto; border-radius: 5px; }
+    pre code { background: none; padding: 0; }
+    table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+    th, td { border: 1px solid #ddd; padding: 0.5em; text-align: left; }
+    th { background: #f4f4f4; }
+    blockquote { border-left: 3px solid #ddd; margin: 1em 0; padding-left: 1em; color: #666; }
+  </style>
+</head>
+<body>
+<p><h1>第11章 记忆系统</h1></p><p>> <strong>本章目标</strong>：解释项目指令、用户记忆和会话上下文如何长期影响 Agent。
+> <strong>pi 源码对照</strong>：
+> - <code>packages/agent/src/harness/session/memory-repo.ts</code> — 记忆仓库
+> - <code>packages/agent/src/harness/session/memory-storage.ts</code> — 记忆存储
+> - <code>packages/coding-agent/src/core/resource-loader.ts</code> — 资源加载
+>
+> <strong>本章结束能做什么</strong>：能设计文件系统优先的记忆加载、提取、更新机制。
+> <strong>阅读时间</strong>：约 30 分钟。</p><p>---</p><p><h2>1. 三层个性化体系</h2></p><p><h3>1.1 三层对比</h3></p><p><table><thead><tr><th>层</th><th>存储位置</th><th>生命周期</th><th>写入者</th><th>用途</th></tr></thead><tbody><tr><td><strong>CLAUDE.md</strong></td><td>项目文件系统</td><td>随代码版本控制</td><td>团队成员提交</td><td>架构约定、代码规范</td></tr><tr><td><strong>记忆系统</strong></td><td><code>~/.claude/projects/<slug>/memory/</code></td><td>跨会话持久</td><td>模型自动提取</td><td>用户偏好、反馈校正</td></tr><tr><td><strong>输出风格</strong></td><td>配置层</td><td>按需加载</td><td>当前对话</td><td>回复风格</td></tr></tbody></table>
+<h3>1.2 CLAUDE.md 层级</h3></p><p><pre><code class="language-">项目根/
+├── CLAUDE.md                    # 项目级
+└── .claude/
+    ├── CLAUDE.md               # 项目配置
+    ├── rules/
+    │   └── <em>.md               # 条件规则
+    └── memory/                 # 记忆存储
+        ├── user-memory.md
+        └── project-memory.md
+</code></pre></p><p>---</p><p><h2>2. 记忆类型</h2></p><p><h3>2.1 记忆类型定义</h3></p><p><pre><code class="language-typescript">// packages/agent/src/harness/session/memory-storage.ts
+export type MemoryType =
+  | 'user_preference'   // 用户偏好
+  | 'feedback'          // 反馈校正
+  | 'project_context'   // 项目上下文
+  | 'reference'         // 外部指针</p><p>export interface MemoryEntry {
+  id: string
+  type: MemoryType
+  content: string
+  createdAt: Date
+  updatedAt: Date
+  source: 'extracted' | 'manual' | 'user_feedback'
+}
+</code></pre></p><p><h3>2.2 记忆提取</h3></p><p><pre><code class="language-typescript">// packages/agent/src/harness/session/memory-repo.ts
+export async function extractMemory(
+  messages: Message[],
+): Promise<MemoryEntry[]> {
+  // 从对话历史中提取记忆
+  const extractionPrompt = <code>
+从以下对话中提取关键的用户偏好和项目信息：</p><p>${messages.map(m => </code>${m.role}: ${m.content}<code>).join('\n')}</p><p>返回格式：
+<ul><li>用户偏好: ...</li>
+<li>项目上下文: ...</li>
+<li>反馈校正: ...</li>
+</ul></code></p><p>  const response = await callModel(extractionPrompt)
+  return parseMemoryEntries(response)
+}
+</code></pre></p><p>---</p><p><h2>3. 记忆加载</h2></p><p><h3>3.1 加载流程</h3></p><p><pre><code class="language-typescript">// packages/coding-agent/src/core/resource-loader.ts
+export async function loadMemoryForSession(
+  session: AgentSession,
+): Promise<string[]> {
+  const memoryFiles = await findMemoryFiles(session.projectRoot)
+  const memories: string[] = []</p><p>  for (const file of memoryFiles) {
+    const content = await readFile(file, 'utf-8')
+    const { data, content: body } = parseFrontmatter(content)</p><p>    // 检查是否适用当前会话
+    if (isApplicable(data, session)) {
+      memories.push(body)
+    }
+  }</p><p>  return memories
+}</p><p>function isApplicable(
+  frontmatter: Record<string, unknown>,
+  session: AgentSession,
+): boolean {
+  // 检查条件规则
+  const when = frontmatter.when as string | undefined
+  if (!when) return true</p><p>  return evaluateCondition(when, {
+    cwd: session.cwd,
+    projectRoot: session.projectRoot,
+    model: session.config.model,
+  })
+}
+</code></pre></p><p>---</p><p><h2>4. 记忆预取</h2></p><p><h3>4.1 首轮预取</h3></p><p><pre><code class="language-typescript">// packages/agent/src/harness/session/memory-storage.ts
+export class MemoryManager {
+  private cache: Map<string, MemoryEntry[]> = new Map()</p><p>  async prefetch(session: AgentSession): Promise<void> {
+    // 在第一轮循环前预取所有记忆
+    const memories = await this.loadAllMemories(session)
+    this.cache.set(session.id, memories)
+  }</p><p>  async getActiveMemories(session: AgentSession): Promise<string[]> {
+    const cached = this.cache.get(session.id)
+    if (cached) {
+      return cached.map(m => m.content)
+    }
+    return this.loadAllMemories(session)
+  }</p><p>  async updateMemory(
+    session: AgentSession,
+    entry: MemoryEntry,
+  ): Promise<void> {
+    await this.storage.save(entry)
+    // 更新缓存
+    const existing = this.cache.get(session.id) ?? []
+    const index = existing.findIndex(e => e.id === entry.id)
+    if (index >= 0) {
+      existing[index] = entry
+    } else {
+      existing.push(entry)
+    }
+    this.cache.set(session.id, existing)
+  }
+}
+</code></pre></p><p>---</p><p><h2>5. Team Memory</h2></p><p><h3>5.1 团队记忆共享</h3></p><p><pre><code class="language-typescript">// packages/agent/src/harness/session/memory-storage.ts
+export interface TeamMemory {
+  teamId: string
+  sharedMemories: MemoryEntry[]
+  memberMemories: Map<string, MemoryEntry[]>
+}</p><p>export async function loadTeamMemory(
+  teamId: string,
+): Promise<TeamMemory> {
+  const sharedDir = getTeamMemoryDir(teamId)
+  const sharedFiles = await glob(<code>${sharedDir}/shared/</em>.md</code>)</p><p>  const sharedMemories: MemoryEntry[] = []
+  for (const file of sharedFiles) {
+    const content = await readFile(file, 'utf-8')
+    sharedMemories.push(parseMemoryFile(content))
+  }</p><p>  return { teamId, sharedMemories, memberMemories: new Map() }
+}
+</code></pre></p><p>---</p><p>> <strong>下一步阅读</strong>：<a href="./chapter-12-session-resume.md">第12章 Session Resume</a> — 会话恢复。
+</p>
+</body>
+</html>

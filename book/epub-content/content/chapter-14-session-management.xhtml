@@ -1,0 +1,226 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <title>第14章 Session 管理</title>
+  <style>
+    body { font-family: 'Noto Sans SC', sans-serif; line-height: 1.8; margin: 1em; }
+    h1, h2, h3, h4 { color: #333; }
+    code { background: #f4f4f4; padding: 0.2em 0.4em; border-radius: 3px; }
+    pre { background: #f4f4f4; padding: 1em; overflow-x: auto; border-radius: 5px; }
+    pre code { background: none; padding: 0; }
+    table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+    th, td { border: 1px solid #ddd; padding: 0.5em; text-align: left; }
+    th { background: #f4f4f4; }
+    blockquote { border-left: 3px solid #ddd; margin: 1em 0; padding-left: 1em; color: #666; }
+  </style>
+</head>
+<body>
+<p><h1>第14章 Session 管理：持久化与树形结构</h1></p><p>> <strong>本章目标</strong>：深入理解 pi 的 SessionManager——JSONL 存储格式、树形会话结构、SessionEntry 类型体系、以及分支/fork/切换的实现。
+>
+> <strong>pi 源码对照</strong>：
+> - <code>packages/coding-agent/src/core/session-manager.ts</code> — 核心实现（约 1500 行）
+> - <code>packages/coding-agent/src/core/messages.ts</code> — 自定义消息到 entry 的转换
+>
+> <strong>本章结束能做什么</strong>：能解释 JSONL session 格式的设计、SessionEntry 类型的角色映射、branch/fork/switch 的实现差异，以及 session 迁移机制。
+> <strong>前置阅读</strong>：第1章（架构总览）、第7章（Context Engineering）。</p><p>---</p><p><h2>1. Session 管理解决的问题</h2></p><p>Code Agent 的每次对话都是一个"会话"。pi 需要：</p><p>1. <strong>持久化</strong>：对话历史不丢失，crash 可恢复
+2. <strong>分支</strong>：用户 fork 当前会话，探索不同路径
+3. <strong>树形结构</strong>：多个分支形成会话树
+4. <strong>切换</strong>：在分支间自由导航
+5. <strong>摘要</strong>：分支太长时生成摘要以便返回时恢复上下文</p><p>---</p><p><h2>2. 存储格式：追加写入的 JSONL</h2></p><p><h3>2.1 为什么不覆盖写入</h3></p><p>Agent 运行时可能崩溃。如果用"读取→修改→覆盖写入"：</p><p><ul><li>读取时 crash → 数据损坏</li>
+<li>写入时 crash → 覆盖了旧数据</li>
+</ul>
+<strong>JSONL（JSON Lines）</strong>：每次写入一行，从不覆盖。</p><p><pre><code class="language-">{"type":"session","version":3,"id":"abc123","timestamp":"2026-05-25T10:00:00Z","cwd":"..."}
+{"type":"message","id":"msg1","parentId":"abc123","timestamp":"...","message":{...}}
+{"type":"message","id":"msg2","parentId":"abc123","timestamp":"...","message":{...}}
+{"type":"branch_summary","id":"bs1","parentId":"abc123","timestamp":"...","summary":"..."}
+</code></pre></p><p><h3>2.2 Session 文件位置</h3></p><p><pre><code class="language-typescript">// session-manager.ts
+const sessionsDir = getSessionsDir()  // ~/.pi/sessions/
+const sessionFile = join(sessionsDir, <code>${sessionId}.jsonl</code>)
+</code></pre></p><p><h3>2.3 版本管理</h3></p><p><pre><code class="language-typescript">// session-manager.ts
+export const CURRENT_SESSION_VERSION = 3
+</code></pre></p><p>Session 文件头部记录版本，迁移时自动升级。</p><p>---</p><p><h2>3. SessionEntry 类型体系</h2></p><p><h3>3.1 完整类型列表</h3></p><p><pre><code class="language-typescript">// session-manager.ts
+export type SessionEntry =
+    | SessionMessageEntry          // user/assistant/toolResult 消息
+    | ThinkingLevelChangeEntry    // 思考级别变更
+    | ModelChangeEntry           // 模型切换
+    | CompactionEntry            // 压缩记录
+    | BranchSummaryEntry         // 分支摘要
+    | CustomEntry               // 扩展自定义数据（不进 LLM）
+    | CustomMessageEntry         // 扩展注入消息（进 LLM）
+    | LabelEntry               // 标签/书签
+    | SessionInfoEntry         // 会话元信息（名称等）
+</code></pre></p><p><h3>3.2 每种 Entry 的结构</h3></p><p><pre><code class="language-typescript">// SessionMessageEntry
+interface SessionMessageEntry extends SessionEntryBase {
+    type: 'message'
+    message: AgentMessage  // 内部消息格式
+}</p><p>// BranchSummaryEntry
+interface BranchSummaryEntry<T = unknown> extends SessionEntryBase {
+    type: 'branch_summary'
+    fromId: string         // 从哪个 entry 分支出去
+    summary: string
+    details?: T            // 扩展用（如文件追踪）
+    fromHook?: boolean     // true = 扩展生成
+}</p><p>// CompactionEntry
+interface CompactionEntry<T = unknown> extends SessionEntryBase {
+    type: 'compaction'
+    summary: string
+    firstKeptEntryId: string  // 压缩后第一个保留的 entry ID
+    tokensBefore: number
+    details?: T             // 扩展数据
+    fromHook?: boolean      // true = 扩展触发
+}</p><p>// CustomMessageEntry（进 LLM 上下文）
+interface CustomMessageEntry<T = unknown> extends SessionEntryBase {
+    type: 'custom_message'
+    customType: string
+    content: string | (TextContent | ImageContent)[]
+    details?: T
+    display: boolean  // false = 对用户隐藏
+}</p><p>// CustomEntry（不进 LLM 上下文）
+interface CustomEntry<T = unknown> extends SessionEntryBase {
+    type: 'custom'
+    customType: string
+    data?: T
+}
+</code></pre></p><p><h3>3.3 Entry 的树形关系</h3></p><p><pre><code class="language-typescript">// session-manager.ts
+interface SessionEntryBase {
+    type: string
+    id: string           // 全局唯一 UUID
+    parentId: string | null  // 父 entry（null = root）
+    timestamp: string
+}
+</code></pre></p><p>每个 Entry 通过 <code>id</code> + <code>parentId</code> 形成树结构。</p><p>---</p><p><h2>4. SessionHeader</h2></p><p>每个 session 文件以 header 开始：</p><p><pre><code class="language-typescript">// session-manager.ts
+interface SessionHeader {
+    type: 'session'
+    version?: number  // v1 没有这个字段
+    id: string
+    timestamp: string
+    cwd: string
+    parentSession?: string  // fork 来源的 session
+}
+</code></pre></p><p>---</p><p><h2>5. SessionManager 核心 API</h2></p><p><h3>5.1 只读接口（ReadonlySessionManager）</h3></p><p><pre><code class="language-typescript">// session-manager.ts
+export type ReadonlySessionManager = Pick<
+    SessionManager,
+    | 'getCwd'
+    | 'getSessionDir'
+    | 'getSessionId'
+    | 'getSessionFile'
+    | 'getLeafId'          // 当前叶子节点
+    | 'getLeafEntry'       // 当前 entry
+    | 'getEntry'           // 按 ID 查询
+    | 'getLabel'           // 查询标签
+    | 'getBranch'          // 获取到 root 的路径
+    | 'getHeader'
+    | 'getEntries'         // 所有 entries
+    | 'getTree'            // 完整树结构
+    | 'getSessionName'
+>
+</code></pre></p><p><h3>5.2 写入接口</h3></p><p><pre><code class="language-typescript">// SessionManager
+appendMessage(message: AgentMessage): string  // 返回 entry id
+appendCustomMessageEntry(customType, content, display, details?): string
+appendThinkingLevelChange(level: string): void
+appendModelChange(provider: string, modelId: string): void
+appendCompaction(summary, firstKeptEntryId, tokensBefore, details?): string
+appendBranchSummary(summary, fromId, details?): string
+setLabel(targetId, label): void
+setSessionName(name): void
+</code></pre></p><p><h3>5.3 树导航接口</h3></p><p><pre><code class="language-typescript">// SessionManager
+getTree(): SessionTreeNode[]  // 完整树
+getBranch(entryId: string): SessionEntry[]  // 从 root 到指定 entry 的路径
+getLeafId(): string  // 当前叶子（最新 entry）
+getLeafEntry(): SessionEntry
+</code></pre></p><p>---</p><p><h2>6. 分支（Fork）与切换（Switch）</h2></p><p><h3>6.1 fork vs switch vs navigateTree</h3></p><p><table><thead><tr><th>操作</th><th>目标</th><th>当前分支</th><th>实现</th></tr></thead><tbody><tr><td>fork</td><td>新建分支</td><td>保留</td><td>新 entry 加到当前 leaf 下</td></tr><tr><td>switch</td><td>切换到已有分支</td><td>保留</td><td>直接改 leafId</td></tr><tr><td>navigateTree</td><td>跳转到树中任意节点</td><td>摘要后切换</td><td>先生成 branchSummary，再跳转</td></tr></tbody></table>
+<h3>6.2 fork 实现</h3></p><p><pre><code class="language-typescript">// session-manager.ts
+fork(entryId: string, options?): { newEntryId: string }
+</code></pre></p><p>fork 在当前 leaf 下创建一个新的 <code>branch_summary</code> entry，然后新的用户消息作为其子节点。</p><p><h3>6.3 navigateTree 实现</h3></p><p><pre><code class="language-typescript">// session-manager.ts
+async navigateTree(
+    targetId: string,
+    options?: {
+        summarize?: boolean      // 是否摘要当前分支
+        customInstructions?: string
+        replaceInstructions?: boolean
+        label?: string
+    }
+)
+</code></pre></p><p>---</p><p><h2>7. SessionContext：LLM 看到的上下文</h2></p><p><pre><code class="language-typescript">// session-manager.ts
+export interface SessionContext {
+    messages: AgentMessage[]        // 所有消息（用于 LLM）
+    thinkingLevel: string
+    model: { provider: string; modelId: string } | null
+}
+</code></pre></p><p><pre><code class="language-typescript">// session-manager.ts: buildSessionContext()
+export function buildSessionContext(entries: SessionEntry[]): SessionContext {
+    const messages: AgentMessage[] = []</p><p>    for (const entry of entries) {
+        if (entry.type === 'message') {
+            messages.push(entry.message)
+        } else if (entry.type === 'custom_message') {
+            // CustomMessageEntry → AgentMessage
+            messages.push(createCustomMessage(...))
+        } else if (entry.type === 'branch_summary') {
+            messages.push(createBranchSummaryMessage(...))
+        } else if (entry.type === 'compaction') {
+            messages.push(createCompactionSummaryMessage(...))
+        }
+        // 其他类型不进入 messages
+    }</p><p>    return { messages, thinkingLevel, model }
+}
+</code></pre></p><p>---</p><p><h2>8. 迁移机制</h2></p><p><h3>8.1 为什么需要迁移</h3></p><p>Session 格式会演进。pi 用版本号管理：</p><p><pre><code class="language-typescript">// session-manager.ts
+export const CURRENT_SESSION_VERSION = 3</p><p>// 迁移链：
+// v1 → v2: 添加 version 字段
+// v2 → v3: 添加 compaction 的 details 字段
+</code></pre></p><p><h3>8.2 migrateSessionEntries</h3></p><p><pre><code class="language-typescript">// session-manager.ts
+export function migrateSessionEntries(
+    entries: SessionEntry[],
+    fromVersion: number,
+    toVersion: number
+): SessionEntry[]
+</code></pre></p><p>---</p><p><h2>9. JSONL 的读写实现</h2></p><p><h3>9.1 追加写入</h3></p><p><pre><code class="language-typescript">// session-manager.ts
+appendEntry(entry: FileEntry): void {
+    const line = JSON.stringify(entry) + '\n'
+    appendFileSync(this.sessionFile, line, 'utf-8')
+}
+</code></pre></p><p><h3>9.2 读取</h3></p><p><pre><code class="language-typescript">// session-manager.ts
+loadEntries(): SessionEntry[] {
+    const content = readFileSync(this.sessionFile, 'utf-8')
+    const lines = content.split('\n').filter(line => line.trim())</p><p>    const entries: SessionEntry[] = []
+    for (const line of lines) {
+        try {
+            entries.push(JSON.parse(line))
+        } catch (e) {
+            // 跳过损坏的行
+        }
+    }
+    return entries
+}
+</code></pre></p><p>---</p><p><h2>10. 树形结构操作</h2></p><p><h3>10.1 getTree 的实现</h3></p><p><pre><code class="language-typescript">// session-manager.ts
+getTree(): SessionTreeNode[] {
+    // 1. 读取所有 entries
+    // 2. 构建 id → entry 的 Map
+    // 3. 构建 id → children 的 Map
+    // 4. 递归构建树
+}
+</code></pre></p><p><h3>10.2 getBranch 的实现</h3></p><p><pre><code class="language-typescript">// session-manager.ts
+getBranch(entryId: string): SessionEntry[] {
+    const branch: SessionEntry[] = []
+    let current: SessionEntry | undefined = this.getEntry(entryId)</p><p>    while (current) {
+        branch.unshift(current)
+        current = current.parentId
+            ? this.getEntry(current.parentId)
+            : undefined
+    }</p><p>    return branch
+}
+</code></pre></p><p>---</p><p><h2>11. 设计亮点</h2></p><p><table><thead><tr><th>特性</th><th>实现方式</th><th>为什么</th></tr></thead><tbody><tr><td>JSONL 追加写入</td><td><code>appendFileSync</code></td><td>crash-safe，从不覆盖</td></tr><tr><td>Entry 版本化</td><td><code>CURRENT_SESSION_VERSION</code> + migrate 函数</td><td>平滑演进格式</td></tr><tr><td>Tree 结构</td><td><code>id</code> + <code>parentId</code> 自引用</td><td>灵活，支持任意深度的分支</td></tr><tr><td>分离 CustomEntry / CustomMessageEntry</td><td>前者不进 LLM，后者进</td><td>扩展可存元数据不浪费 context</td></tr><tr><td>LabelEntry</td><td>独立 entry，不修改原 entry</td><td>非破坏性书签</td></tr></tbody></table>
+---</p><p><h2>12. 与 AgentSession 的关系</h2></p><p><pre><code class="language-mermaid">flowchart LR
+    subgraph AgentSession
+        A[prompt] --> B[message_end 事件]
+        B --> C[_handleAgentEvent]
+    end</p><p>    C --> D[sessionManager.appendMessage]
+    D --> E[JSONL 追加写入]</p><p>    C --> F{message role}
+    F -->|custom| G[appendCustomMessageEntry]
+    F -->|assistant| H[appendMessage]
+    F -->|user| H</p><p>    G --> E
+    H --> E
+</code></pre></p><p>---</p><p>> <strong>下一步阅读</strong>：<a href="./chapter-10-extension-system.md">第10章 扩展系统</a> — 理解 pi 的插件架构完整实现。
+</p>
+</body>
+</html>

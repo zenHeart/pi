@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookId" version="3.0">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:identifier id="BookId">pi-agent-book</dc:identifier>
+    <dc:title>Pi Agent 实战：从源码到复刻</dc:title>
+    <dc:creator>Pi Agent 团队</dc:creator>
+    <dc:language>zh-CN</dc:language>
+    <meta property="dcterms:modified">2026-05-25T00:00:00Z</meta>
+  </metadata>
+  <manifest>
+    <item id="ncx" media-type="application/x-dtbncx+xml" href="toc.ncx"/>
+    <item id="nav" media-type="application/xhtml+xml" href="nav.xhtml" properties="nav"/>
+        <item id="chapter1" media-type="application/xhtml+xml" href="content/chapter-00-prerequisites.xhtml"/>
+    <item id="chapter2" media-type="application/xhtml+xml" href="content/chapter-01-architecture-overview.xhtml"/>
+    <item id="chapter3" media-type="application/xhtml+xml" href="content/chapter-02-agent-loop.xhtml"/>
+    <item id="chapter4" media-type="application/xhtml+xml" href="content/chapter-03-tools.xhtml"/>
+    <item id="chapter5" media-type="application/xhtml+xml" href="content/chapter-04-streaming-api-client.xhtml"/>
+    <item id="chapter6" media-type="application/xhtml+xml" href="content/chapter-05-system-prompt.xhtml"/>
+    <item id="chapter7" media-type="application/xhtml+xml" href="content/chapter-06-build-from-zero.xhtml"/>
+    <item id="chapter8" media-type="application/xhtml+xml" href="content/chapter-07-context-engineering.xhtml"/>
+    <item id="chapter9" media-type="application/xhtml+xml" href="content/chapter-08-token-and-budget.xhtml"/>
+    <item id="chapter10" media-type="application/xhtml+xml" href="content/chapter-09-permission-and-security.xhtml"/>
+    <item id="chapter11" media-type="application/xhtml+xml" href="content/chapter-10-extension-system.xhtml"/>
+    <item id="chapter12" media-type="application/xhtml+xml" href="content/chapter-11-memory.xhtml"/>
+    <item id="chapter13" media-type="application/xhtml+xml" href="content/chapter-12-session-resume.xhtml"/>
+    <item id="chapter14" media-type="application/xhtml+xml" href="content/chapter-13-mcp-protocol.xhtml"/>
+    <item id="chapter15" media-type="application/xhtml+xml" href="content/chapter-14-session-management.xhtml"/>
+    <item id="chapter16" media-type="application/xhtml+xml" href="content/chapter-15-skills-and-plugins.xhtml"/>
+    <item id="chapter17" media-type="application/xhtml+xml" href="content/chapter-16-slash-commands.xhtml"/>
+    <item id="chapter18" media-type="application/xhtml+xml" href="content/chapter-17-output-styles.xhtml"/>
+    <item id="chapter19" media-type="application/xhtml+xml" href="content/chapter-18-eval-and-observability.xhtml"/>
+    <item id="chapter20" media-type="application/xhtml+xml" href="content/chapter-19-eval-platform-hands-on.xhtml"/>
+    <item id="chapter21" media-type="application/xhtml+xml" href="content/chapter-20-deployment-and-ops.xhtml"/>
+    <item id="chapter22" media-type="application/xhtml+xml" href="content/chapter-21-rl-integration.xhtml"/>
+    <item id="chapter23" media-type="application/xhtml+xml" href="content/chapter-22-interview-cheatsheet.xhtml"/>
+    <item id="chapter24" media-type="application/xhtml+xml" href="content/chapter-23-replication-guide.xhtml"/>
+  </manifest>
+  <spine toc="ncx">
+        <itemref idref="chapter1"/>
+    <itemref idref="chapter2"/>
+    <itemref idref="chapter3"/>
+    <itemref idref="chapter4"/>
+    <itemref idref="chapter5"/>
+    <itemref idref="chapter6"/>
+    <itemref idref="chapter7"/>
+    <itemref idref="chapter8"/>
+    <itemref idref="chapter9"/>
+    <itemref idref="chapter10"/>
+    <itemref idref="chapter11"/>
+    <itemref idref="chapter12"/>
+    <itemref idref="chapter13"/>
+    <itemref idref="chapter14"/>
+    <itemref idref="chapter15"/>
+    <itemref idref="chapter16"/>
+    <itemref idref="chapter17"/>
+    <itemref idref="chapter18"/>
+    <itemref idref="chapter19"/>
+    <itemref idref="chapter20"/>
+    <itemref idref="chapter21"/>
+    <itemref idref="chapter22"/>
+    <itemref idref="chapter23"/>
+    <itemref idref="chapter24"/>
+  </spine>
+</package>

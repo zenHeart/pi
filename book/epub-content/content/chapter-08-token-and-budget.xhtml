@@ -1,0 +1,139 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <title>第8章 Token 与预算管理</title>
+  <style>
+    body { font-family: 'Noto Sans SC', sans-serif; line-height: 1.8; margin: 1em; }
+    h1, h2, h3, h4 { color: #333; }
+    code { background: #f4f4f4; padding: 0.2em 0.4em; border-radius: 3px; }
+    pre { background: #f4f4f4; padding: 1em; overflow-x: auto; border-radius: 5px; }
+    pre code { background: none; padding: 0; }
+    table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+    th, td { border: 1px solid #ddd; padding: 0.5em; text-align: left; }
+    th { background: #f4f4f4; }
+    blockquote { border-left: 3px solid #ddd; margin: 1em 0; padding-left: 1em; color: #666; }
+  </style>
+</head>
+<body>
+<p><h1>第8章 Token 与预算管理</h1></p><p>> <strong>本章目标</strong>：解释 token、上下文窗口、成本和 task budget 如何共同约束 Agent。
+> <strong>pi 源码对照</strong>：
+> - <code>packages/agent/src/harness/session/session.ts</code> — 会话中的成本追踪
+> - <code>packages/agent/src/harness/session/memory-storage.ts</code> — 预算持久化
+> - <code>packages/coding-agent/src/core/messages.ts</code> — Token 估算
+>
+> <strong>本章结束能做什么</strong>：能为自定义 harness 设计成本追踪、预算提示和压缩触发策略。
+> <strong>阅读时间</strong>：约 20 分钟。</p><p>---</p><p><h2>1. Token 基础</h2></p><p><h3>1.1 估算规则</h3></p><p><table><thead><tr><th>类型</th><th>bytes/token</th><th>示例</th></tr></thead><tbody><tr><td>英文</td><td>~4</td><td>1K token ≈ 750 字</td></tr><tr><td>中文</td><td>~2</td><td>1K token ≈ 500 字</td></tr><tr><td>JSON</td><td>~2</td><td>1K token ≈ 500 字符</td></tr><tr><td>代码</td><td>~3-4</td><td>1K token ≈ 250 行</td></tr></tbody></table>
+<h3>1.2 pi 估算实现</h3></p><p><pre><code class="language-typescript">// packages/coding-agent/src/core/messages.ts
+export function roughTokenCount(
+  content: string,
+  type: 'text' | 'code' | 'json' = 'text',
+): number {
+  const bytesPerToken = type === 'code' ? 3.5
+    : type === 'json' ? 2
+    : 4
+  return Math.ceil(content.length / bytesPerToken)
+}
+</code></pre></p><p>---</p><p><h2>2. 成本追踪</h2></p><p><h3>2.1 Usage 记录</h3></p><p><pre><code class="language-typescript">// packages/agent/src/harness/session/session.ts
+export interface ModelUsage {
+  inputTokens: number
+  outputTokens: number
+  cacheCreationInputTokens?: number
+  cacheReadInputTokens?: number
+  totalCostUSD: number
+}</p><p>export function recordUsage(
+  session: AgentSession,
+  usage: ModelUsage,
+): void {
+  // 更新会话总成本
+  session.totalCost += usage.totalCostUSD</p><p>  // 按模型追踪
+  const model = session.config.model
+  if (!session.modelUsage[model]) {
+    session.modelUsage[model] = {
+      inputTokens: 0,
+      outputTokens: 0,
+      totalCostUSD: 0,
+    }
+  }</p><p>  const current = session.modelUsage[model]
+  current.inputTokens += usage.inputTokens
+  current.outputTokens += usage.outputTokens
+  current.totalCostUSD += usage.totalCostUSD
+}
+</code></pre></p><p><h3>2.2 成本计算</h3></p><p><pre><code class="language-typescript">// packages/agent/src/harness/session/session.ts
+const MODEL_PRICING = {
+  'claude-3-5-sonnet': {
+    input: 3,      // $3 / MTok
+    output: 15,    // $15 / MTok
+  },
+  'claude-3-5-haiku': {
+    input: 0.8,    // $0.8 / MTok
+    output: 4,     // $4 / MTok
+  },
+}</p><p>export function calculateCost(
+  model: string,
+  usage: ModelUsage,
+): number {
+  const pricing = MODEL_PRICING[model] ?? MODEL_PRICING['claude-3-5-haiku']
+  const inputCost = (usage.inputTokens / 1_000_000) <em> pricing.input
+  const outputCost = (usage.outputTokens / 1_000_000) </em> pricing.output
+  return inputCost + outputCost
+}
+</code></pre></p><p>---</p><p><h2>3. 预算管理</h2></p><p><h3>3.1 预算配置</h3></p><p><pre><code class="language-typescript">// packages/agent/src/harness/session/session.ts
+export interface BudgetConfig {
+  maxCostUSD: number           // 最大总成本
+  maxTokens: number           // 最大 token 数
+  warningThreshold: number     // 警告阈值（百分比）
+}</p><p>export function checkBudget(
+  session: AgentSession,
+  config: BudgetConfig,
+): BudgetStatus {
+  const { maxCostUSD, warningThreshold } = config
+  const costRatio = session.totalCost / maxCostUSD</p><p>  if (costRatio >= 1) {
+    return { status: 'exceeded', ratio: costRatio }
+  }
+  if (costRatio >= warningThreshold) {
+    return { status: 'warning', ratio: costRatio }
+  }
+  return { status: 'ok', ratio: costRatio }
+}
+</code></pre></p><p><h3>3.2 预算超限处理</h3></p><p><pre><code class="language-typescript">// packages/agent/src/harness/session/session.ts
+export function handleBudgetExceeded(
+  session: AgentSession,
+  config: BudgetConfig,
+): LoopAction {
+  const status = checkBudget(session, config)</p><p>  if (status.status === 'exceeded') {
+    return {
+      action: 'stop',
+      reason: 'budget_exceeded',
+      message: <code>Budget exceeded: $${session.totalCost.toFixed(4)} / $${config.maxCostUSD}</code>,
+    }
+  }</p><p>  if (status.status === 'warning') {
+    return {
+      action: 'warn',
+      reason: 'budget_warning',
+      message: <code>Budget warning: ${(status.ratio * 100).toFixed(0)}% used</code>,
+    }
+  }</p><p>  return { action: 'continue' }
+}
+</code></pre></p><p>---</p><p><h2>4. taskBudget 跨压缩追踪</h2></p><p><pre><code class="language-typescript">// packages/agent/src/harness/compaction/compaction.ts
+export interface CompactTracking {
+  originalBudget: number
+  usedAcrossCompacts: number
+  preservedEssentialTokens: number
+}</p><p>export function trackBudgetAcrossCompaction(
+  before: CompactState,
+  after: CompactState,
+  tracking: CompactTracking,
+): CompactTracking {
+  const beforeTokens = sumMessageTokens(before.messages)
+  const afterTokens = sumMessageTokens(after.messages)
+  const delta = beforeTokens - afterTokens</p><p>  return {
+    ...tracking,
+    usedAcrossCompacts: tracking.usedAcrossCompacts + delta,
+    preservedEssentialTokens: tracking.preservedEssentialTokens + afterTokens,
+  }
+}
+</code></pre></p><p>---</p><p>> <strong>下一步阅读</strong>：<a href="./chapter-09-permission-and-security.md">第9章 权限与安全</a> — 权限架构。
+</p>
+</body>
+</html>

@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <title>第4章 Streaming API Client</title>
+  <style>
+    body { font-family: 'Noto Sans SC', sans-serif; line-height: 1.8; margin: 1em; }
+    h1, h2, h3, h4 { color: #333; }
+    code { background: #f4f4f4; padding: 0.2em 0.4em; border-radius: 3px; }
+    pre { background: #f4f4f4; padding: 1em; overflow-x: auto; border-radius: 5px; }
+    pre code { background: none; padding: 0; }
+    table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+    th, td { border: 1px solid #ddd; padding: 0.5em; text-align: left; }
+    th { background: #f4f4f4; }
+    blockquote { border-left: 3px solid #ddd; margin: 1em 0; padding-left: 1em; color: #666; }
+  </style>
+</head>
+<body>
+<p><h1>第4章 Streaming API Client：流式通信</h1></p><p>> <strong>本章目标</strong>：解释模型事件流如何驱动 Agent Loop，处理重试、fallback 和 usage。
+> <strong>pi 源码对照</strong>：
+> - <code>packages/ai/src/</code> — AI Provider 客户端
+> - <code>packages/agent/src/harness/agent-harness.ts</code> — Harness 中的 API 调用
+> - <code>packages/coding-agent/src/core/messages.ts</code> — 消息处理
+>
+> <strong>本章结束能做什么</strong>：能实现一个可消费 streaming content block、可恢复错误、可记录 cost 的 API 客户端层。
+> <strong>阅读时间</strong>：约 30 分钟。</p><p>---</p><p><h2>1. API 客户端架构</h2></p><p><h3>1.1 客户端接口</h3></p><p><pre><code class="language-typescript">// packages/ai/src/client.ts
+export interface AIClient {
+  messages: {
+    create(params: MessageCreateParams): Promise<Message>
+    stream(params: MessageCreateParams): AsyncGenerator<StreamEvent>
+  }
+}
+</code></pre></p><p><h3>1.2 流式响应解析</h3></p><p>SSE 事件流 → 结构化 ContentBlock：</p><p><pre><code class="language-">event: message_start
+data: {"type":"message_start","message":{...}}</p><p>event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"text"}}</p><p>event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}</p><p>event: content_block_stop
+data: {"type":"content_block_stop","index":0}</p><p>event: message_delta
+data: {"type":"message_delta","delta":{"stop_reason":"end_turn"}}</p><p>event: message_stop
+data: {"type":"message_stop"}
+</code></pre></p><p>---</p><p><h2>2. pi 的消息流</h2></p><p><h3>2.1 消息创建</h3></p><p><pre><code class="language-typescript">// packages/coding-agent/src/core/messages.ts
+export async function createMessage(
+  client: AIClient,
+  params: MessageCreateParams,
+): Promise<Message> {
+  return client.messages.create(params)
+}
+</code></pre></p><p><h3>2.2 流式消息</h3></p><p><pre><code class="language-typescript">// packages/coding-agent/src/core/messages.ts
+export async function<em> streamMessage(
+  client: AIClient,
+  params: MessageCreateParams,
+): AsyncGenerator<StreamEvent> {
+  const stream = await client.messages.stream(params)</p><p>  for await (const event of stream) {
+    yield mapEvent(event)
+  }
+}</p><p>function mapEvent(event: SDKEvent): StreamEvent {
+  switch (event.type) {
+    case 'content_block_delta':
+      if (event.delta.type === 'text_delta') {
+        return { type: 'text', text: event.delta.text }
+      }
+      if (event.delta.type === 'input_json_delta') {
+        return { type: 'tool_input', partial: event.delta.partial_json }
+      }
+      break
+    case 'content_block_start':
+      if (event.content_block.type === 'tool_use') {
+        return { type: 'tool_start', id: event.content_block.id, name: event.content_block.name }
+      }
+      break
+    case 'message_delta':
+      return { type: 'message_delta', stop_reason: event.delta.stop_reason }
+  }
+  return { type: 'unknown', event }
+}
+</code></pre></p><p>---</p><p><h2>3. 重试机制</h2></p><p><h3>3.1 重试策略</h3></p><p><pre><code class="language-typescript">// packages/ai/src/retry.ts
+export interface RetryOptions {
+  maxRetries: number
+  baseDelayMs: number
+  maxDelayMs: number
+  backoffMultiplier: number
+  retryableErrors: string[]
+}</p><p>export async function withRetry<T>(
+  operation: () => Promise<T>,
+  options: RetryOptions,
+): Promise<T> {
+  let lastError: Error</p><p>  for (let attempt = 0; attempt <= options.maxRetries; attempt++) {
+    try {
+      return await operation()
+    } catch (error) {
+      lastError = error</p><p>      if (!isRetryable(error, options.retryableErrors)) {
+        throw error
+      }</p><p>      if (attempt < options.maxRetries) {
+        const delay = Math.min(
+          options.baseDelayMs </em> Math.pow(options.backoffMultiplier, attempt),
+          options.maxDelayMs,
+        )
+        await sleep(delay)
+      }
+    }
+  }</p><p>  throw lastError!
+}
+</code></pre></p><p><h3>3.2 错误分类</h3></p><p><table><thead><tr><th>错误类型</th><th>处理策略</th><th>重试</th></tr></thead><tbody><tr><td><code>401 Unauthorized</code></td><td>刷新 token</td><td>否</td></tr><tr><td><code>429 Rate Limit</code></td><td>指数退避</td><td>是</td></tr><tr><td><code>529 Service Unavailable</code></td><td>降级到 fallback 模型</td><td>是</td></tr><tr><td><code>ECONNRESET</code></td><td>立即重试</td><td>是</td></tr><tr><td><code>Timeout</code></td><td>增加超时重试</td><td>是</td></tr></tbody></table>
+---</p><p><h2>4. Usage 与成本追踪</h2></p><p><h3>4.1 Usage 记录</h3></p><p><pre><code class="language-typescript">// packages/agent/src/harness/session/session.ts
+export interface ModelUsage {
+  inputTokens: number
+  outputTokens: number
+  cacheCreationInputTokens?: number
+  cacheReadInputTokens?: number
+  totalCostUSD: number
+}</p><p>export function trackUsage(
+  session: AgentSession,
+  usage: ModelUsage,
+): void {
+  session.totalCost += usage.totalCostUSD</p><p>  if (!session.modelUsage[session.config.model]) {
+    session.modelUsage[session.config.model] = {
+      inputTokens: 0,
+      outputTokens: 0,
+      totalCostUSD: 0,
+    }
+  }</p><p>  const current = session.modelUsage[session.config.model]
+  current.inputTokens += usage.inputTokens
+  current.outputTokens += usage.outputTokens
+  current.totalCostUSD += usage.totalCostUSD
+}
+</code></pre></p><p>---</p><p><h2>5. Prompt Cache 协同</h2></p><p><h3>5.1 缓存标记</h3></p><p><pre><code class="language-typescript">// packages/ai/src/client.ts
+export function buildCachedPrompt(
+  staticContent: string,
+  dynamicContent: string,
+): { static: CachedContent, dynamic: string } {
+  return {
+    static: {
+      type: 'text',
+      text: staticContent,
+      cache_control: { type: 'ephemeral' as const },
+    },
+    dynamic: dynamicContent,
+  }
+}
+</code></pre></p><p><h3>5.2 缓存命中率追踪</h3></p><p><pre><code class="language-typescript">// packages/agent/src/harness/session/session.ts
+export function trackCacheHit(
+  session: AgentSession,
+  usage: { cache_read_input_tokens?: number },
+): void {
+  if (usage.cache_read_input_tokens) {
+    session.cacheHits += usage.cache_read_input_tokens
+  }
+}
+</code></pre></p><p>---</p><p>> <strong>下一步阅读</strong>：<a href="./chapter-05-system-prompt.md">第5章 System Prompt</a> — System Prompt 构建。
+</p>
+</body>
+</html>

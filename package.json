@@ -55,5 +55,8 @@
 		"gaxios": {
 			"rimraf": "6.1.2"
 		}
+	},
+	"dependencies": {
+		"jszip": "3.10.1"
 	}
 }

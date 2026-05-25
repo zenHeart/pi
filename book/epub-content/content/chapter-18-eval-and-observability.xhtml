@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <title>第18章 Eval 与可观测性</title>
+  <style>
+    body { font-family: 'Noto Sans SC', sans-serif; line-height: 1.8; margin: 1em; }
+    h1, h2, h3, h4 { color: #333; }
+    code { background: #f4f4f4; padding: 0.2em 0.4em; border-radius: 3px; }
+    pre { background: #f4f4f4; padding: 1em; overflow-x: auto; border-radius: 5px; }
+    pre code { background: none; padding: 0; }
+    table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+    th, td { border: 1px solid #ddd; padding: 0.5em; text-align: left; }
+    th { background: #f4f4f4; }
+    blockquote { border-left: 3px solid #ddd; margin: 1em 0; padding-left: 1em; color: #666; }
+  </style>
+</head>
+<body>
+<p><h1>第18章 Eval 与可观测性</h1></p><p>> <strong>本章目标</strong>：解释如何评估 Agent 是否真的完成任务。
+> <strong>pi 源码对照</strong>：
+> - <code>packages/coding-agent/src/core/telemetry.ts</code> — 遥测
+> - <code>packages/agent/test/</code> — 测试目录
+>
+> <strong>本章结束能做什么</strong>：能设计覆盖 unit/integration/e2e 的评测和观测指标。
+> <strong>阅读时间</strong>：约 25 分钟。</p><p>---</p><p><h2>1. Eval 三层体系</h2></p><p><pre><code class="language-">┌─────────────────────────────────────────┐
+│ E2E 层 - 用户价值                       │
+│ - 用户采纳率                            │
+│ - 节省时间                              │
+│ - 人工接管率                            │
+├─────────────────────────────────────────┤
+│ 集成层 - 任务完成                       │
+│ - 端到端完成率                         │
+│ - 多步准确性                            │
+│ - 工具链执行准确性                      │
+├─────────────────────────────────────────┤
+│ 单元层 - 原子能力                       │
+│ - 工具参数正确性                        │
+│ - 输出格式稳定性                        │
+│ - 上下文选择效率                        │
+└─────────────────────────────────────────┘
+</code></pre></p><p>---</p><p><h2>2. Trace 设计</h2></p><p><h3>2.1 Trace Entry</h3></p><p><pre><code class="language-typescript">// packages/coding-agent/src/core/telemetry.ts
+export interface TraceEntry {
+  type: 'span' | 'event' | 'metric'
+  timestamp: number
+  traceId: string
+  spanId?: string
+  parentSpanId?: string
+  name: string
+  duration?: number
+  attributes: Record<string, unknown>
+}
+</code></pre></p><p><h3>2.2 关键 Trace 事件</h3></p><p><table><thead><tr><th>事件</th><th>属性</th></tr></thead><tbody><tr><td><code>agent.turn.start</code></td><td>turnCount, model</td></tr><tr><td><code>agent.tool.call</code></td><td>toolName, toolInput</td></tr><tr><td><code>agent.tool.result</code></td><td>toolName, success, duration</td></tr><tr><td><code>agent.api.request</code></td><td>model, inputTokens, outputTokens</td></tr><tr><td><code>agent.api.response</code></td><td>stopReason, cost</td></tr></tbody></table>
+---</p><p><h2>3. 失败归因</h2></p><p><h3>3.1 五类失败</h3></p><p><table><thead><tr><th>类别</th><th>说明</th><th>例子</th></tr></thead><tbody><tr><td><code>model_error</code></td><td>模型决策错误</td><td>选了错误工具</td></tr><tr><td><code>tool_error</code></td><td>工具执行失败</td><td>bash 超时</td></tr><tr><td><code>context_error</code></td><td>上下文超限</td><td>prompt_too_long</td></tr><tr><td><code>permission_error</code></td><td>权限被拒</td><td>权限流水线拒绝</td></tr><tr><td><code>unknown_error</code></td><td>未知错误</td><td>异常</td></tr></tbody></table>
+<h3>3.2 归因逻辑</h3></p><p><pre><code class="language-typescript">// packages/coding-agent/src/core/telemetry.ts
+export function classifyFailure(
+  error: Error,
+  context: ExecutionContext,
+): FailureCategory {
+  if (error instanceof ToolError) {
+    return 'tool_error'
+  }
+  if (error instanceof PermissionError) {
+    return 'permission_error'
+  }
+  if (error instanceof ContextOverflowError) {
+    return 'context_error'
+  }
+  if (error instanceof ModelError) {
+    return 'model_error'
+  }
+  return 'unknown_error'
+}
+</code></pre></p><p>---</p><p><h2>4. 指标体系</h2></p><p><h3>4.1 核心指标</h3></p><p><pre><code class="language-typescript">// packages/coding-agent/src/core/telemetry.ts
+export interface AgentMetrics {
+  // 效率
+  avgTurnsPerTask: number
+  avgTokensPerTurn: number
+  avgCostPerTask: number</p><p>  // 质量
+  taskCompletionRate: number
+  humanTakeoverRate: number
+  toolCallSuccessRate: number</p><p>  // 延迟
+  avgApiLatency: number
+  avgToolLatency: number
+}
+</code></pre></p><p>---</p><p>> <strong>下一步阅读</strong>：<a href="./chapter-19-eval-platform-hands-on.md">第19章 Eval 平台实操</a> — 动手实践。
+</p>
+</body>
+</html>
