@@ -2,14 +2,14 @@ name: Build EPUB
 
 on:
   push:
-    branches: [main]
+    branches: [book]
     paths:
       - "book/**"
       - ".github/workflows/build-epub.yml"
       - "package-lock.json"
       - "package.json"
   pull_request:
-    branches: [main]
+    branches: [book]
     paths:
       - "book/**"
       - ".github/workflows/build-epub.yml"
@@ -75,7 +75,7 @@ jobs:
   publish-pages:
     name: Publish to gh-pages
     needs: build
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/book'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -279,7 +279,7 @@ jobs:
                 </div>
                 <img class="cover" src="cover.svg" alt="Pi Agent 实战 EPUB 封面">
               </section>
-              <footer>由 GitHub Actions 在 main 分支推送时自动构建并发布到 gh-pages。</footer>
+              <footer>由 GitHub Actions 在 book 分支推送时自动构建并发布到 gh-pages。</footer>
             </main>
           </body>
           </html>
