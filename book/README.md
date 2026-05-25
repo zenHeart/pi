@@ -1,84 +1,57 @@
-# Pi Agent 实战：从使用到复刻
+# Pi Agent 实战：从零使用到专家复刻
 
-本书面向只懂 JavaScript/TypeScript 的前端工程师，目标是让读者只看本书就能完成三件事：完整使用 pi 的核心功能，理解这些功能背后的 runtime 设计，基于这些设计复刻一个最小但正确的 coding agent harness。
+本书面向完全不懂 pi agent、但熟悉 JavaScript/TypeScript 和前端工程化的工程师。目标是让读者只看本书，就能完整使用 pi 的核心功能，理解核心功能的运行原理，解释为什么 pi 这样设计，并能复刻一个最小但正确的 coding agent harness。
 
-本版以当前仓库源码和本地 docs 为事实源，不套用不属于 pi 核心的概念。pi 的真实设计是：核心保持小，provider、loop、session、tools、resources 和 events 稳定；复杂工作流通过 TypeScript extensions、skills、prompt templates、themes、packages、SDK、RPC、JSON mode 扩展。
+本版只以当前仓库源码、`packages/agent/docs/`、`packages/coding-agent/docs/` 和测试为事实源。没有源码或 docs 支撑的说法不写成结论；MCP、sub-agent、plan mode、todo、background bash 等能力只作为生态设计边界说明。
 
 ## 阅读结果
 
 读完后应能做到：
 
-1. 从用户视角安装、认证、选模型、引用文件、运行 shell、管理 session、压缩、导出、配置 settings/keybindings、使用 packages。
-2. 从源码视角理解 provider stream、agent loop、tool call/result、system prompt、context transform、session JSONL tree、ExtensionRunner、ResourceLoader、ModelRegistry。
-3. 用 TypeScript 从零实现一个最小 coding agent：消息协议、stream adapter、工具闭环、JSONL session、abort、faux provider。
-4. 设计自定义 AgentHarness：turn snapshot、save point、pending session writes、steering/follow-up/nextTurn、compaction、tree navigation、hook settlement。
-5. 判断一个 agent 产品设计是否能生产化，而不是只停留在 prompt demo。
+1. 安装、认证、选模型、进入 interactive/print/json/rpc 模式，使用文件引用、shell、内置工具、session、compaction、export、settings、keybindings 和 packages。
+2. 从源码解释 provider stream、message schema、agent loop、tool call/result、system prompt、ResourceLoader、ModelRegistry、SessionManager、ExtensionRunner、AgentHarness。
+3. 写出自定义 tool、extension、skill、prompt template、custom provider、SDK session 和 RPC JSONL client。
+4. 判断一个 agent 能力应该属于核心、产品层、扩展、package 还是外部环境。
+5. 按 turn snapshot、save point、pending writes、queue、abort、compaction、tree navigation 设计自己的 harness。
 
-## 章节结构
+## 覆盖矩阵
 
-- 第0章：前端工程师前置知识
-- 第1章：架构总览
-- 第2章：Agent Loop
-- 第3章：Tools
-- 第4章：Streaming API Client
-- 第5章：System Prompt
-- 第6章：从零构建最小 Agent
-- 第7章：Context Engineering
-- 第8章：Token 与预算管理
-- 第9章：权限与安全
-- 第10章：扩展系统
-- 第11章：记忆系统
-- 第12章：Session Resume
-- 第13章：MCP 协议接入策略
-- 第14章：Session 管理
-- 第15章：Skills、Prompt Templates、Themes 与 Packages
-- 第16章：Slash Commands
-- 第17章：输出风格、TUI 与渲染扩展
-- 第18章：Eval 与可观测性
-- 第19章：Eval 平台实操
-- 第20章：部署与运维
-- 第21章：RL 集成蓝图
-- 第22章：AgentHarness 专家速查
-- 第23章：复刻路径与检查清单
+| 核心能力 | 章节 | Docs | 源码 | 测试证据 | 掌握标准 |
+|---|---|---|---|---|---|
+| 安装、认证、模型、运行模式 | 1、3、24 | `quickstart.md`、`usage.md`、`providers.md`、`models.md` | `main.ts`、`auth-storage.ts`、`model-registry.ts` | `auth-storage.test.ts`、`args.test.ts` | 能解释 API key/OAuth/env/auth.json 和 mode 选择 |
+| 交互工作流、队列、abort | 2、15 | `usage.md`、`rpc.md` | `agent-loop.ts`、`agent-session.ts` | `agent-session-concurrent.test.ts`、`agent-session-prompt.test.ts` | 能区分 steering、follow-up、abort、slash command |
+| provider 与流式协议 | 5、6 | `custom-provider.md`、`models.md` | `packages/ai/src/types.ts`、provider implementations | `packages/ai/test/*` | 能从 stream event 合成 assistant message |
+| agent loop 与工具闭环 | 7、8、9 | `extensions.md`、`sdk.md` | `agent-loop.ts`、`tools/*.ts` | `agent-loop.test.ts`、tool regression tests | 能解释 tool call 校验、执行、结果回灌 |
+| system prompt 与上下文 | 10、11、12 | `skills.md`、`prompt-templates.md`、`compaction.md` | `system-prompt.ts`、`resource-loader.ts`、`compaction.ts` | `agent-session-compaction.test.ts`、skill collision regression | 能判断模型看到什么、harness 私下保存什么 |
+| session 与 durable harness | 13、14 | `session-format.md`、`agent-harness.md`、`durable-harness.md` | `session-manager.ts`、`agent-harness.ts` | `session-manager/*`、`agent-session-tree-navigation.test.ts` | 能从 JSONL tree 恢复、分叉、压缩会话 |
+| packages 与资源发现 | 16 | `packages.md`、`settings.md` | `package-manager.ts`、`resource-loader.ts` | package/resource regression tests | 能解释 user/project/package precedence 和冲突 |
+| extensions 与 hooks | 17、18、19、20 | `extensions.md`、`hooks.md`、`tui.md` | `extensions/types.ts`、`extensions/runner.ts` | `extensions-discovery.test.ts`、extension suite tests | 能写扩展并解释事件生命周期和执行权限 |
+| SDK/RPC 集成 | 22、23 | `sdk.md`、`rpc.md`、`json.md` | `sdk.ts`、`rpc-types.ts`、`rpc-mode.ts` | `agent-session-runtime.test.ts`、RPC tests | 能把 pi 嵌入 TS 程序或外部进程 |
+| 安全、观测、生态边界 | 25、26、27 | `observability.md`、`packages.md`、`usage.md` | `bash.ts`、`package-manager.ts`、extension APIs | security/tool/package regressions | 能解释为什么核心小、哪些能力应扩展实现 |
+| 从零复刻 | 28 | 全书 | `agent-loop.ts`、`agent.ts`、`session-manager.ts` | faux provider suite | 能实现最小 loop、tool、session、abort、faux provider |
+| 创造者/读者最终自审 | 29 | 全部 docs | 全部核心源码入口 | 覆盖矩阵对应测试 | 能判断本书讲到什么、为什么只讲这些、下一步读哪里 |
 
-## Docs 映射
+## 82 法则与进一步阅读
 
-| docs 事实源 | 主要映射章节 |
-|---|---|
-| `packages/agent/docs/agent-harness.md` | 第1、12、22、23章 |
-| `packages/agent/docs/hooks.md` | 第10、22章 |
-| `packages/agent/docs/durable-harness.md` | 第12、22、23章 |
-| `packages/agent/docs/observability.md` | 第18、19、21章 |
-| `packages/coding-agent/docs/quickstart.md` | 第1、3、20、23章 |
-| `packages/coding-agent/docs/usage.md` | 第1、3、12、14、16、23章 |
-| `packages/coding-agent/docs/providers.md` | 第4、16、20章 |
-| `packages/coding-agent/docs/models.md` | 第4、16、20章 |
-| `packages/coding-agent/docs/custom-provider.md` | 第4、10、20章 |
-| `packages/coding-agent/docs/settings.md` | 第8、16、17、20章 |
-| `packages/coding-agent/docs/keybindings.md` | 第16、17、23章 |
-| `packages/coding-agent/docs/sessions.md` | 第12、14、23章 |
-| `packages/coding-agent/docs/session-format.md` | 第12、14、21章 |
-| `packages/coding-agent/docs/compaction.md` | 第7、8、12、14章 |
-| `packages/coding-agent/docs/extensions.md` | 第9、10、13、15、17章 |
-| `packages/coding-agent/docs/skills.md` | 第11、15章 |
-| `packages/coding-agent/docs/prompt-templates.md` | 第5、11、15章 |
-| `packages/coding-agent/docs/themes.md` | 第15、17章 |
-| `packages/coding-agent/docs/packages.md` | 第11、15、20章 |
-| `packages/coding-agent/docs/sdk.md` | 第1、18、19、22、23章 |
-| `packages/coding-agent/docs/rpc.md` | 第18、19、23章 |
-| `packages/coding-agent/docs/json.md` | 第18、19章 |
-| `packages/coding-agent/docs/tui.md` | 第17章 |
-| `packages/coding-agent/docs/terminal-setup.md`、`tmux.md`、`windows.md`、`termux.md`、`shell-aliases.md` | 第17、20、23章 |
-| `packages/coding-agent/docs/development.md` | 第6、18、20章 |
+本书正文只展开 pi agent 的核心 20%：使用路径、运行时边界、消息与工具协议、session/durable harness、资源发现、扩展体系、SDK/RPC、安全与复刻。其余细节按主题指向仓库 docs：
 
-## 构建
+- 日常用法、CLI、session、export/share：`packages/coding-agent/docs/usage.md`、`sessions.md`
+- provider、models、OAuth、custom provider：`providers.md`、`models.md`、`custom-provider.md`
+- compaction、session format、durable harness：`compaction.md`、`session-format.md`、`packages/agent/docs/durable-harness.md`
+- extensions、hooks、TUI、packages：`extensions.md`、`packages/agent/docs/hooks.md`、`tui.md`、`packages.md`
+- SDK/RPC/JSON：`sdk.md`、`rpc.md`、`json.md`
+- 平台细节：`windows.md`、`termux.md`、`tmux.md`、`terminal-setup.md`、`keybindings.md`
+
+## 构建与校验
 
 ```bash
-cd book
-node postprocess.js
-node build-epub.mjs pi-agent-handbook.epub
+node book/validate.js
+node book/postprocess.js
+node book/build-epub.mjs pi-agent-handbook.epub
 ```
+
+`book/metadata.yaml` 是章节顺序唯一来源。`book/preprocess.js` 已禁用，避免旧外部分析映射覆盖本书。
 
 ## 源码引用规范
 
-正文中的源码引用使用 `/source-code/...#Lx` 形式，例如 `[agent-loop.ts#L31](/source-code/packages/agent/src/agent-loop.ts#L31)`。EPUB 构建时会把它转换为 GitHub 链接。
+正文中的源码引用使用 `/source-code/...#Lx` 形式，例如 [agent-loop.ts#L31](/source-code/packages/agent/src/agent-loop.ts#L31)。不要把 Markdown 源码链接包在反引号中。

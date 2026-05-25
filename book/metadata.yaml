@@ -1,5 +1,5 @@
-﻿title: "Pi Agent 实战：从使用到复刻"
-subtitle: "面向前端工程师的 pi coding agent 原理、源码与自定义 harness 指南"
+title: "Pi Agent 实战：从零使用到专家复刻"
+subtitle: "面向前端工程师的 pi coding agent 使用、原理、源码与扩展手册"
 author: "Pi Agent Handbook"
 lang: zh-CN
 subject: "Coding Agent / TypeScript / Agent Harness / Pi"
@@ -17,46 +17,50 @@ keywords:
 cover:
   type: svg
   path: cover/cover.svg
-version: "3.0.0"
+version: "4.0.0"
 date: "2026-05-25"
 publisher: "Self-published"
 rights: "CC BY-NC-SA 4.0"
 isbn: ""
 
 chapters:
-  - part: "第一部分：从零进入 pi"
+  - part: "第一部分：从零开始使用 pi"
     items:
-      - chapter-00-prerequisites.md
-      - chapter-01-architecture-overview.md
-      - chapter-06-build-from-zero.md
-  - part: "第二部分：运行时核心"
+      - chapter-00-learning-map.md
+      - chapter-01-install-auth-first-run.md
+      - chapter-02-interactive-workflow.md
+      - chapter-03-cli-settings-modes.md
+  - part: "第二部分：核心运行时原理"
     items:
-      - chapter-02-agent-loop.md
-      - chapter-03-tools.md
-      - chapter-04-streaming-api-client.md
-      - chapter-05-system-prompt.md
-      - chapter-07-context-engineering.md
-      - chapter-08-token-and-budget.md
-  - part: "第三部分：产品能力"
+      - chapter-04-architecture-overview.md
+      - chapter-05-provider-model-streaming.md
+      - chapter-06-message-protocol.md
+      - chapter-07-agent-loop.md
+      - chapter-08-builtin-tools.md
+      - chapter-09-tool-concurrency-file-safety.md
+      - chapter-10-system-prompt-context.md
+      - chapter-11-skills-prompts-progressive-disclosure.md
+      - chapter-12-token-budget-compaction.md
+  - part: "第三部分：会话、资源与扩展"
     items:
-      - chapter-09-permission-and-security.md
-      - chapter-10-extension-system.md
-      - chapter-11-memory.md
-      - chapter-12-session-resume.md
-      - chapter-14-session-management.md
-      - chapter-16-slash-commands.md
-      - chapter-17-output-styles.md
-  - part: "第四部分：生态与集成"
+      - chapter-13-session-jsonl-durable-harness.md
+      - chapter-14-resume-fork-clone-tree.md
+      - chapter-15-slash-queues-abort.md
+      - chapter-16-packages-resource-precedence.md
+      - chapter-17-extension-overview.md
+      - chapter-18-extension-hooks-events.md
+      - chapter-19-custom-tools-commands-shortcuts-flags.md
+      - chapter-20-extension-ui-tui-rendering.md
+      - chapter-21-themes-keybindings-terminal.md
+  - part: "第四部分：集成、运维与专家能力"
     items:
-      - chapter-13-mcp-protocol.md
-      - chapter-15-skills-and-plugins.md
-      - chapter-18-eval-and-observability.md
-      - chapter-19-eval-platform-hands-on.md
-      - chapter-20-deployment-and-ops.md
-      - chapter-21-rl-integration.md
-  - part: "附录"
-    items:
-      - chapter-22-interview-cheatsheet.md
-      - chapter-23-replication-guide.md
+      - chapter-22-sdk-typescript-embedding.md
+      - chapter-23-rpc-jsonl-control.md
+      - chapter-24-custom-provider-auth-models.md
+      - chapter-25-observability-debugging.md
+      - chapter-26-security-boundaries.md
+      - chapter-27-ecosystem-design.md
+      - chapter-28-minimal-pi-agent.md
+      - chapter-29-creator-reader-audit.md
 
 pi_repo: "D:\\chengle\\code\\repos\\pi"
