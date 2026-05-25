@@ -1,57 +1,90 @@
-# Pi Agent 实战：从零使用到专家复刻
+# Pi Agent 专家之书
 
-本书面向完全不懂 pi agent、但熟悉 JavaScript/TypeScript 和前端工程化的工程师。目标是让读者只看本书，就能完整使用 pi 的核心功能，理解核心功能的运行原理，解释为什么 pi 这样设计，并能复刻一个最小但正确的 coding agent harness。
+这本书按照 `book/outline.md` 重写，面向完全不了解 Pi Agent、但具备前端工程经验的读者。内容只依赖仓库源码与 docs，目标是让读者理解如何使用 Pi 的核心功能、核心功能的原理，以及为什么系统要这样设计。
 
-本版只以当前仓库源码、`packages/agent/docs/`、`packages/coding-agent/docs/` 和测试为事实源。没有源码或 docs 支撑的说法不写成结论；MCP、sub-agent、plan mode、todo、background bash 等能力只作为生态设计边界说明。
+## 组织原则
 
-## 阅读结果
+全书按理解依赖组织，而不是按菜单罗列。先建立产品心智，再进入日常使用；先理解工具和 Agent loop，再理解 session、compaction 和恢复；先理解 ResourceLoader，再学习 templates、skills、extensions 和 packages；先理解 provider，再学习 SDK、RPC、JSON；最后通过四个项目和审计清单收束为专家判断。
 
-读完后应能做到：
+## 写作标准
 
-1. 安装、认证、选模型、进入 interactive/print/json/rpc 模式，使用文件引用、shell、内置工具、session、compaction、export、settings、keybindings 和 packages。
-2. 从源码解释 provider stream、message schema、agent loop、tool call/result、system prompt、ResourceLoader、ModelRegistry、SessionManager、ExtensionRunner、AgentHarness。
-3. 写出自定义 tool、extension、skill、prompt template、custom provider、SDK session 和 RPC JSONL client。
-4. 判断一个 agent 能力应该属于核心、产品层、扩展、package 还是外部环境。
-5. 按 turn snapshot、save point、pending writes、queue、abort、compaction、tree navigation 设计自己的 harness。
+本书按源码分析书的标准编写，而不是功能简介。每章都必须回答：它解决什么系统问题；用户视角如何使用；启动时和运行时分别加载什么；模型能看到什么、Pi 运行时私下保留什么；触发条件来自用户、模型、生命周期事件还是外部调用；执行权在哪里；结果如何回灌；失败和安全边界是什么。
 
-## 覆盖矩阵
+每章都包含 Mermaid 生命周期图、源码责任表、创建者视角的设计不变量和专家验收任务。源码引用必须使用 `/source-code/...#Lx` 的 Markdown 链接并细化到行号，避免 EPUB 中退化为不可点击文本。
 
-| 核心能力 | 章节 | Docs | 源码 | 测试证据 | 掌握标准 |
-|---|---|---|---|---|---|
-| 安装、认证、模型、运行模式 | 1、3、24 | `quickstart.md`、`usage.md`、`providers.md`、`models.md` | `main.ts`、`auth-storage.ts`、`model-registry.ts` | `auth-storage.test.ts`、`args.test.ts` | 能解释 API key/OAuth/env/auth.json 和 mode 选择 |
-| 交互工作流、队列、abort | 2、15 | `usage.md`、`rpc.md` | `agent-loop.ts`、`agent-session.ts` | `agent-session-concurrent.test.ts`、`agent-session-prompt.test.ts` | 能区分 steering、follow-up、abort、slash command |
-| provider 与流式协议 | 5、6 | `custom-provider.md`、`models.md` | `packages/ai/src/types.ts`、provider implementations | `packages/ai/test/*` | 能从 stream event 合成 assistant message |
-| agent loop 与工具闭环 | 7、8、9 | `extensions.md`、`sdk.md` | `agent-loop.ts`、`tools/*.ts` | `agent-loop.test.ts`、tool regression tests | 能解释 tool call 校验、执行、结果回灌 |
-| system prompt 与上下文 | 10、11、12 | `skills.md`、`prompt-templates.md`、`compaction.md` | `system-prompt.ts`、`resource-loader.ts`、`compaction.ts` | `agent-session-compaction.test.ts`、skill collision regression | 能判断模型看到什么、harness 私下保存什么 |
-| session 与 durable harness | 13、14 | `session-format.md`、`agent-harness.md`、`durable-harness.md` | `session-manager.ts`、`agent-harness.ts` | `session-manager/*`、`agent-session-tree-navigation.test.ts` | 能从 JSONL tree 恢复、分叉、压缩会话 |
-| packages 与资源发现 | 16 | `packages.md`、`settings.md` | `package-manager.ts`、`resource-loader.ts` | package/resource regression tests | 能解释 user/project/package precedence 和冲突 |
-| extensions 与 hooks | 17、18、19、20 | `extensions.md`、`hooks.md`、`tui.md` | `extensions/types.ts`、`extensions/runner.ts` | `extensions-discovery.test.ts`、extension suite tests | 能写扩展并解释事件生命周期和执行权限 |
-| SDK/RPC 集成 | 22、23 | `sdk.md`、`rpc.md`、`json.md` | `sdk.ts`、`rpc-types.ts`、`rpc-mode.ts` | `agent-session-runtime.test.ts`、RPC tests | 能把 pi 嵌入 TS 程序或外部进程 |
-| 安全、观测、生态边界 | 25、26、27 | `observability.md`、`packages.md`、`usage.md` | `bash.ts`、`package-manager.ts`、extension APIs | security/tool/package regressions | 能解释为什么核心小、哪些能力应扩展实现 |
-| 从零复刻 | 28 | 全书 | `agent-loop.ts`、`agent.ts`、`session-manager.ts` | faux provider suite | 能实现最小 loop、tool、session、abort、faux provider |
-| 创造者/读者最终自审 | 29 | 全部 docs | 全部核心源码入口 | 覆盖矩阵对应测试 | 能判断本书讲到什么、为什么只讲这些、下一步读哪里 |
+## 目录
 
-## 82 法则与进一步阅读
+### 第 0 部分：建立产品心智
 
-本书正文只展开 pi agent 的核心 20%：使用路径、运行时边界、消息与工具协议、session/durable harness、资源发现、扩展体系、SDK/RPC、安全与复刻。其余细节按主题指向仓库 docs：
+- [00. Pi 是什么](chapters/chapter-00-pi-identity.md)
+- [01. 小内核与可组合边界](chapters/chapter-01-small-core.md)
 
-- 日常用法、CLI、session、export/share：`packages/coding-agent/docs/usage.md`、`sessions.md`
-- provider、models、OAuth、custom provider：`providers.md`、`models.md`、`custom-provider.md`
-- compaction、session format、durable harness：`compaction.md`、`session-format.md`、`packages/agent/docs/durable-harness.md`
-- extensions、hooks、TUI、packages：`extensions.md`、`packages/agent/docs/hooks.md`、`tui.md`、`packages.md`
-- SDK/RPC/JSON：`sdk.md`、`rpc.md`、`json.md`
-- 平台细节：`windows.md`、`termux.md`、`tmux.md`、`terminal-setup.md`、`keybindings.md`
+### 第 1 部分：成为熟练用户
 
-## 构建与校验
+- [02. 安装、启动与第一次对话](chapters/chapter-02-install-and-first-run.md)
+- [03. Provider、账号与鉴权](chapters/chapter-03-providers-and-auth.md)
+- [04. 交互模式与 TUI 心智模型](chapters/chapter-04-interactive-tui.md)
+- [05. 输入队列、中断与连续协作](chapters/chapter-05-input-queue-interruptions.md)
+- [06. CLI、Print 模式与 JSON 模式](chapters/chapter-06-print-json-cli.md)
+
+### 第 2 部分：理解 Agent 内核
+
+- [07. 内置工具与文件系统动作](chapters/chapter-07-built-in-tools.md)
+- [08. Agent Loop 的运行原理](chapters/chapter-08-agent-loop.md)
+- [09. 系统提示词与行为契约](chapters/chapter-09-system-prompt.md)
+- [10. Settings 与可配置行为](chapters/chapter-10-settings.md)
+
+### 第 3 部分：掌握会话与记忆
+
+- [11. Session 格式与事件历史](chapters/chapter-11-session-format.md)
+- [12. 恢复、分支与会话树](chapters/chapter-12-resume-fork-tree.md)
+- [13. 上下文压缩与长期任务](chapters/chapter-13-compaction.md)
+- [14. 导出、审计与会话共享](chapters/chapter-14-export-and-share.md)
+
+### 第 4 部分：掌握资源与扩展系统
+
+- [15. ResourceLoader 与资源优先级](chapters/chapter-15-resource-loader.md)
+- [16. Prompt Templates 与可复用任务](chapters/chapter-16-prompt-templates.md)
+- [17. Skills 与模型行为注入](chapters/chapter-17-skills.md)
+- [18. Extensions 的能力边界](chapters/chapter-18-extensions-intro.md)
+- [19. 扩展事件与生命周期](chapters/chapter-19-extension-events.md)
+- [20. 自定义工具、命令与快捷入口](chapters/chapter-20-extension-tools-commands.md)
+- [21. 扩展 UI、主题与终端体验](chapters/chapter-21-extension-ui-themes.md)
+- [22. Pi Packages 与分发复用](chapters/chapter-22-packages.md)
+
+### 第 5 部分：掌握模型与 Provider
+
+- [23. pi-ai 的模型抽象](chapters/chapter-23-ai-package.md)
+- [24. 模型注册、能力与选择策略](chapters/chapter-24-models-registry.md)
+- [25. 自定义 Provider 与 OAuth](chapters/chapter-25-custom-provider.md)
+- [26. Thinking、缓存与多模态能力](chapters/chapter-26-thinking-cache-images.md)
+
+### 第 6 部分：掌握集成接口
+
+- [27. SDK：把 Pi 嵌入应用](chapters/chapter-27-sdk.md)
+- [28. AgentSessionRuntime 与服务装配](chapters/chapter-28-runtime-services.md)
+- [29. RPC 模式与外部进程集成](chapters/chapter-29-rpc.md)
+- [30. JSON 事件流与机器可读输出](chapters/chapter-30-json-events.md)
+
+### 第 7 部分：掌握安全、调试与协作
+
+- [31. 安全模型与信任边界](chapters/chapter-31-safety.md)
+- [32. 调试 Pi：从现象到层级定位](chapters/chapter-32-debugging.md)
+- [33. 平台差异与终端环境](chapters/chapter-33-platform-terminal.md)
+- [34. 本地开发、贡献与质量门禁](chapters/chapter-34-development.md)
+
+### 第 8 部分：专家级综合项目
+
+- [35. 项目一：实现最小 Pi-like Agent](chapters/chapter-35-project-minimal-agent.md)
+- [36. 项目二：构建团队 Pi Package](chapters/chapter-36-project-team-package.md)
+- [37. 项目三：接入私有模型 Provider](chapters/chapter-37-project-private-provider.md)
+- [38. 项目四：定制交互 UI 与工作流](chapters/chapter-38-project-custom-ui.md)
+- [39. 专家级审计清单](chapters/chapter-39-expert-audit.md)
+
+## 校验
+
+修改书稿后运行：
 
 ```bash
 node book/validate.js
-node book/postprocess.js
-node book/build-epub.mjs pi-agent-handbook.epub
 ```
-
-`book/metadata.yaml` 是章节顺序唯一来源。`book/preprocess.js` 已禁用，避免旧外部分析映射覆盖本书。
-
-## 源码引用规范
-
-正文中的源码引用使用 `/source-code/...#Lx` 形式，例如 [agent-loop.ts#L31](/source-code/packages/agent/src/agent-loop.ts#L31)。不要把 Markdown 源码链接包在反引号中。
