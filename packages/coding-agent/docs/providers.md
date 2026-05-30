@@ -101,31 +101,23 @@ The file is created with `0600` permissions (user read/write only). Auth file cr
 
 ### Key Resolution
 
-The `key` field supports command execution, environment interpolation, and literals:
+The `key` field supports three formats:
 
-- **Shell command:** `"!command"` at the start executes the whole value as a command and uses stdout (cached for process lifetime)
+- **Shell command:** `"!command"` executes and uses stdout (cached for process lifetime)
   ```json
   { "type": "api_key", "key": "!security find-generic-password -ws 'anthropic'" }
   { "type": "api_key", "key": "!op read 'op://vault/item/credential'" }
   ```
-- **Environment interpolation:** `"$ENV_VAR"` or `"${ENV_VAR}"` uses the value of the named variable. Interpolation works inside larger literals.
+- **Environment variable:** Uses the value of the named variable
   ```json
-  { "type": "api_key", "key": "$MY_ANTHROPIC_KEY" }
-  { "type": "api_key", "key": "${KEY_PREFIX}_${KEY_SUFFIX}" }
-  ```
-  `$FOO_BAR` is the variable `FOO_BAR`; use `${FOO}_BAR` when `BAR` is literal text. Missing environment variables make the value unresolved.
-- **Escapes:** `"$$"` emits a literal `"$"`; `"$!"` emits a literal `"!"` without triggering command execution.
-  ```json
-  { "type": "api_key", "key": "$$literal-dollar-prefix" }
-  { "type": "api_key", "key": "$!literal-bang-prefix" }
+  { "type": "api_key", "key": "MY_ANTHROPIC_KEY" }
   ```
 - **Literal value:** Used directly
   ```json
   { "type": "api_key", "key": "sk-ant-..." }
-  { "type": "api_key", "key": "public" }
   ```
 
-Legacy uppercase env-var-like values such as `MY_API_KEY` are migrated to `$MY_API_KEY` on startup. OAuth credentials are also stored here after `/login` and managed automatically.
+OAuth credentials are also stored here after `/login` and managed automatically.
 
 ## Cloud Providers
 

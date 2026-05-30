@@ -225,24 +225,6 @@ export function shouldCompact(contextTokens: number, contextWindow: number, sett
 // Cut point detection
 // ============================================================================
 
-const ESTIMATED_IMAGE_CHARS = 4800;
-
-function estimateTextAndImageContentChars(content: string | Array<{ type: string; text?: string }>): number {
-	if (typeof content === "string") {
-		return content.length;
-	}
-
-	let chars = 0;
-	for (const block of content) {
-		if (block.type === "text" && block.text) {
-			chars += block.text.length;
-		} else if (block.type === "image") {
-			chars += ESTIMATED_IMAGE_CHARS;
-		}
-	}
-	return chars;
-}
-
 /**
  * Estimate token count for a message using chars/4 heuristic.
  * This is conservative (overestimates tokens).
@@ -252,9 +234,16 @@ export function estimateTokens(message: AgentMessage): number {
 
 	switch (message.role) {
 		case "user": {
-			chars = estimateTextAndImageContentChars(
-				(message as { content: string | Array<{ type: string; text?: string }> }).content,
-			);
+			const content = (message as { content: string | Array<{ type: string; text?: string }> }).content;
+			if (typeof content === "string") {
+				chars = content.length;
+			} else if (Array.isArray(content)) {
+				for (const block of content) {
+					if (block.type === "text" && block.text) {
+						chars += block.text.length;
+					}
+				}
+			}
 			return Math.ceil(chars / 4);
 		}
 		case "assistant": {
@@ -272,7 +261,18 @@ export function estimateTokens(message: AgentMessage): number {
 		}
 		case "custom":
 		case "toolResult": {
-			chars = estimateTextAndImageContentChars(message.content);
+			if (typeof message.content === "string") {
+				chars = message.content.length;
+			} else {
+				for (const block of message.content) {
+					if (block.type === "text" && block.text) {
+						chars += block.text.length;
+					}
+					if (block.type === "image") {
+						chars += 4800; // Estimate images as 4000 chars, or 1200 tokens
+					}
+				}
+			}
 			return Math.ceil(chars / 4);
 		}
 		case "bashExecution": {

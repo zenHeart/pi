@@ -1,0 +1,73 @@
+title: "Pi Agent 源码实战指南"
+subtitle: "从使用到复刻 Coding Agent"
+author: "ZenHeart"
+language: "zh-CN"
+date: "2026-05-25"
+version: "5.0.0"
+publisher: "ZenHeart"
+description: "一本面向前端工程师的 Pi Agent 源码实战教材，基于仓库源码与 docs 重写。"
+rights: "Copyright © 2026 ZenHeart"
+
+chapters:
+  - part: "第 0 部分：建立产品心智"
+    items:
+      - chapter-00-pi-identity.md
+      - chapter-01-small-core.md
+  - part: "第 1 部分：成为熟练用户"
+    items:
+      - chapter-02-install-and-first-run.md
+      - chapter-03-providers-and-auth.md
+      - chapter-04-interactive-tui.md
+      - chapter-05-input-queue-interruptions.md
+      - chapter-06-print-json-cli.md
+  - part: "第 2 部分：理解 Agent 内核"
+    items:
+      - chapter-07-built-in-tools.md
+      - chapter-08-agent-loop.md
+      - chapter-09-system-prompt.md
+      - chapter-10-settings.md
+  - part: "第 3 部分：掌握会话与记忆"
+    items:
+      - chapter-11-session-format.md
+      - chapter-12-resume-fork-tree.md
+      - chapter-13-compaction.md
+      - chapter-14-export-and-share.md
+  - part: "第 4 部分：掌握资源与扩展系统"
+    items:
+      - chapter-15-resource-loader.md
+      - chapter-16-prompt-templates.md
+      - chapter-17-skills.md
+      - chapter-18-extensions-intro.md
+      - chapter-19-extension-events.md
+      - chapter-20-extension-tools-commands.md
+      - chapter-21-extension-ui-themes.md
+      - chapter-22-packages.md
+  - part: "第 5 部分：掌握模型与 Provider"
+    items:
+      - chapter-23-ai-package.md
+      - chapter-24-models-registry.md
+      - chapter-25-custom-provider.md
+      - chapter-26-thinking-cache-images.md
+  - part: "第 6 部分：掌握集成接口"
+    items:
+      - chapter-27-sdk.md
+      - chapter-28-runtime-services.md
+      - chapter-29-rpc.md
+      - chapter-30-json-events.md
+  - part: "第 7 部分：掌握安全、调试与协作"
+    items:
+      - chapter-31-safety.md
+      - chapter-32-debugging.md
+      - chapter-33-platform-terminal.md
+      - chapter-34-development.md
+  - part: "第 8 部分：专家级综合项目"
+    items:
+      - chapter-35-project-minimal-agent.md
+      - chapter-36-project-team-package.md
+      - chapter-37-project-private-provider.md
+      - chapter-38-project-custom-ui.md
+      - chapter-39-expert-audit.md
+
+pi_repo: "https://github.com/zenHeart/pi"
+source_ref: "codex/pi-book-rewrite"
+source_base: "../"

@@ -8,151 +8,18 @@ import { getShellConfig } from "../utils/shell.ts";
 
 // Cache for shell command results (persists for process lifetime)
 const commandResultCache = new Map<string, string | undefined>();
-const ENV_VAR_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
-const ENV_VAR_NAME_PREFIX_RE = /^[A-Za-z_][A-Za-z0-9_]*/;
-const LEGACY_ENV_VAR_NAME_RE = /^[A-Z_][A-Z0-9_]*$/;
-
-type TemplatePart = { type: "literal"; value: string } | { type: "env"; name: string };
-
-type ConfigValueReference = { type: "command"; config: string } | { type: "template"; parts: TemplatePart[] };
-
-function appendLiteral(parts: TemplatePart[], value: string): void {
-	if (!value) return;
-	const previousPart = parts[parts.length - 1];
-	if (previousPart?.type === "literal") {
-		previousPart.value += value;
-		return;
-	}
-	parts.push({ type: "literal", value });
-}
-
-function parseConfigValueTemplate(config: string): TemplatePart[] {
-	const parts: TemplatePart[] = [];
-	let index = 0;
-
-	while (index < config.length) {
-		const dollarIndex = config.indexOf("$", index);
-		if (dollarIndex < 0) {
-			appendLiteral(parts, config.slice(index));
-			break;
-		}
-
-		appendLiteral(parts, config.slice(index, dollarIndex));
-		const nextChar = config[dollarIndex + 1];
-
-		if (nextChar === "$" || nextChar === "!") {
-			appendLiteral(parts, nextChar);
-			index = dollarIndex + 2;
-			continue;
-		}
-
-		if (nextChar === "{") {
-			const endIndex = config.indexOf("}", dollarIndex + 2);
-			if (endIndex < 0) {
-				appendLiteral(parts, "$");
-				index = dollarIndex + 1;
-				continue;
-			}
-
-			const name = config.slice(dollarIndex + 2, endIndex);
-			if (ENV_VAR_NAME_RE.test(name)) {
-				parts.push({ type: "env", name });
-			} else {
-				appendLiteral(parts, config.slice(dollarIndex, endIndex + 1));
-			}
-			index = endIndex + 1;
-			continue;
-		}
-
-		const match = config.slice(dollarIndex + 1).match(ENV_VAR_NAME_PREFIX_RE);
-		if (match) {
-			parts.push({ type: "env", name: match[0] });
-			index = dollarIndex + 1 + match[0].length;
-			continue;
-		}
-
-		appendLiteral(parts, "$");
-		index = dollarIndex + 1;
-	}
-
-	return parts;
-}
-
-function parseConfigValueReference(config: string): ConfigValueReference {
-	if (config.startsWith("!")) {
-		return { type: "command", config };
-	}
-
-	return { type: "template", parts: parseConfigValueTemplate(config) };
-}
-
-function resolveEnvConfigValue(name: string): string | undefined {
-	return process.env[name] || undefined;
-}
-
-function getTemplateEnvVarNames(parts: TemplatePart[]): string[] {
-	const names: string[] = [];
-	for (const part of parts) {
-		if (part.type !== "env" || names.includes(part.name)) continue;
-		names.push(part.name);
-	}
-	return names;
-}
-
-function resolveTemplate(parts: TemplatePart[]): string | undefined {
-	let resolved = "";
-	for (const part of parts) {
-		if (part.type === "literal") {
-			resolved += part.value;
-			continue;
-		}
-		const envValue = resolveEnvConfigValue(part.name);
-		if (envValue === undefined) return undefined;
-		resolved += envValue;
-	}
-	return resolved;
-}
-
-export function getConfigValueEnvVarName(config: string): string | undefined {
-	const reference = parseConfigValueReference(config);
-	if (reference.type !== "template") return undefined;
-	return reference.parts.length === 1 && reference.parts[0]?.type === "env" ? reference.parts[0].name : undefined;
-}
-
-export function getConfigValueEnvVarNames(config: string): string[] {
-	const reference = parseConfigValueReference(config);
-	return reference.type === "template" ? getTemplateEnvVarNames(reference.parts) : [];
-}
-
-export function getMissingConfigValueEnvVarNames(config: string): string[] {
-	return getConfigValueEnvVarNames(config).filter((name) => resolveEnvConfigValue(name) === undefined);
-}
-
-export function isCommandConfigValue(config: string): boolean {
-	return parseConfigValueReference(config).type === "command";
-}
-
-export function isConfigValueConfigured(config: string): boolean {
-	return getMissingConfigValueEnvVarNames(config).length === 0;
-}
-
-export function isLegacyEnvVarNameConfigValue(config: string): boolean {
-	return LEGACY_ENV_VAR_NAME_RE.test(config);
-}
 
 /**
  * Resolve a config value (API key, header value, etc.) to an actual value.
  * - If starts with "!", executes the rest as a shell command and uses stdout (cached)
- * - Interpolates "$ENV_VAR" or "${ENV_VAR}" references with the named environment variable
- * - In non-command values, "$$" escapes a literal "$" and "$!" escapes a literal "!"
- * - Otherwise treats the value as a literal
+ * - Otherwise checks environment variable first, then treats as literal (not cached)
  */
 export function resolveConfigValue(config: string): string | undefined {
-	const reference = parseConfigValueReference(config);
-	if (reference.type === "command") {
-		return executeCommand(reference.config);
+	if (config.startsWith("!")) {
+		return executeCommand(config);
 	}
-	return resolveTemplate(reference.parts);
+	const envValue = process.env[config];
+	return envValue || config;
 }
 
 function executeWithConfiguredShell(command: string): { executed: boolean; value: string | undefined } {
@@ -222,11 +89,11 @@ function executeCommand(commandConfig: string): string | undefined {
  * Resolve all header values using the same resolution logic as API keys.
  */
 export function resolveConfigValueUncached(config: string): string | undefined {
-	const reference = parseConfigValueReference(config);
-	if (reference.type === "command") {
-		return executeCommandUncached(reference.config);
+	if (config.startsWith("!")) {
+		return executeCommandUncached(config);
 	}
-	return resolveTemplate(reference.parts);
+	const envValue = process.env[config];
+	return envValue || config;
 }
 
 export function resolveConfigValueOrThrow(config: string, description: string): string {
@@ -235,19 +102,8 @@ export function resolveConfigValueOrThrow(config: string, description: string): 
 		return resolvedValue;
 	}
 
-	const reference = parseConfigValueReference(config);
-	if (reference.type === "command") {
-		throw new Error(`Failed to resolve ${description} from shell command: ${reference.config.slice(1)}`);
-	}
-
-	if (reference.type === "template") {
-		const missingEnvVars = getMissingConfigValueEnvVarNames(config);
-		if (missingEnvVars.length === 1) {
-			throw new Error(`Failed to resolve ${description} from environment variable: ${missingEnvVars[0]}`);
-		}
-		if (missingEnvVars.length > 1) {
-			throw new Error(`Failed to resolve ${description} from environment variables: ${missingEnvVars.join(", ")}`);
-		}
+	if (config.startsWith("!")) {
+		throw new Error(`Failed to resolve ${description} from shell command: ${config.slice(1)}`);
 	}
 
 	throw new Error(`Failed to resolve ${description}`);

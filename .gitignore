@@ -33,6 +33,8 @@ syntax.jsonl
 out.jsonl
 pi-*.html
 out.html
+book/*.epub
+book/epub-content/
 packages/coding-agent/binaries/
 todo.md
 plans/

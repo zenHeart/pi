@@ -354,11 +354,6 @@ export interface ModelChangeEntry extends SessionTreeEntryBase {
 	modelId: string;
 }
 
-export interface ActiveToolsChangeEntry extends SessionTreeEntryBase {
-	type: "active_tools_change";
-	activeToolNames: string[];
-}
-
 export interface CompactionEntry<T = unknown> extends SessionTreeEntryBase {
 	type: "compaction";
 	summary: string;
@@ -410,7 +405,6 @@ export type SessionTreeEntry =
 	| MessageEntry
 	| ThinkingLevelChangeEntry
 	| ModelChangeEntry
-	| ActiveToolsChangeEntry
 	| CompactionEntry
 	| BranchSummaryEntry
 	| CustomEntry
@@ -423,7 +417,6 @@ export interface SessionContext {
 	messages: AgentMessage[];
 	thinkingLevel: string;
 	model: { provider: string; modelId: string } | null;
-	activeToolNames: string[] | null;
 }
 
 export interface SessionMetadata {
@@ -600,26 +593,17 @@ export interface SessionTreeEvent {
 	fromHook?: boolean;
 }
 
-export interface ModelUpdateEvent {
-	type: "model_update";
+export interface ModelSelectEvent {
+	type: "model_select";
 	model: Model<any>;
 	previousModel: Model<any> | undefined;
 	source: "set" | "restore";
 }
 
-export interface ThinkingLevelUpdateEvent {
-	type: "thinking_level_update";
+export interface ThinkingLevelSelectEvent {
+	type: "thinking_level_select";
 	level: ThinkingLevel;
 	previousLevel: ThinkingLevel;
-}
-
-export interface ToolsUpdateEvent {
-	type: "tools_update";
-	toolNames: string[];
-	previousToolNames: string[];
-	activeToolNames: string[];
-	previousActiveToolNames: string[];
-	source: "set" | "restore";
 }
 
 export interface ResourcesUpdateEvent<
@@ -650,10 +634,9 @@ export type AgentHarnessOwnEvent<
 	| SessionCompactEvent
 	| SessionBeforeTreeEvent
 	| SessionTreeEvent
-	| ModelUpdateEvent
-	| ThinkingLevelUpdateEvent
-	| ResourcesUpdateEvent<TSkill, TPromptTemplate>
-	| ToolsUpdateEvent;
+	| ModelSelectEvent
+	| ThinkingLevelSelectEvent
+	| ResourcesUpdateEvent<TSkill, TPromptTemplate>;
 
 export type AgentHarnessEvent<TSkill extends Skill = Skill, TPromptTemplate extends PromptTemplate = PromptTemplate> =
 	| AgentEvent
@@ -713,10 +696,9 @@ export type AgentHarnessEventResultMap = {
 	session_compact: undefined;
 	session_before_tree: SessionBeforeTreeResult | undefined;
 	session_tree: undefined;
-	model_update: undefined;
-	thinking_level_update: undefined;
+	model_select: undefined;
+	thinking_level_select: undefined;
 	resources_update: undefined;
-	tools_update: undefined;
 	queue_update: undefined;
 	save_point: undefined;
 	abort: undefined;

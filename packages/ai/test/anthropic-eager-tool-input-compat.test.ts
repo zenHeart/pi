@@ -12,8 +12,8 @@ interface CapturedRequest {
 
 function createModel(baseUrl: string, compat?: Model<"anthropic-messages">["compat"]): Model<"anthropic-messages"> {
 	return {
-		id: "claude-opus-4-8",
-		name: "Claude Opus 4.8",
+		id: "claude-opus-4-7",
+		name: "Claude Opus 4.7",
 		api: "anthropic-messages",
 		provider: "test-anthropic",
 		baseUrl,

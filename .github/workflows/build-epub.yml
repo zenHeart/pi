@@ -1,0 +1,351 @@
+name: Build EPUB
+
+on:
+  push:
+    branches: [book]
+    paths:
+      - "book/**"
+      - ".github/workflows/build-epub.yml"
+      - "package-lock.json"
+      - "package.json"
+  pull_request:
+    branches: [book]
+    paths:
+      - "book/**"
+      - ".github/workflows/build-epub.yml"
+      - "package-lock.json"
+      - "package.json"
+  workflow_dispatch:
+
+concurrency:
+  group: build-epub-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build EPUB
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install system packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            fonts-noto-cjk \
+            fonts-noto-cjk-extra \
+            fonts-noto-color-emoji \
+            libatk-bridge2.0-0 \
+            libatk1.0-0 \
+            libasound2t64 \
+            libcups2 \
+            libdrm2 \
+            libgbm1 \
+            libgtk-3-0 \
+            libnss3 \
+            libpango-1.0-0 \
+            libxcomposite1 \
+            libxdamage1 \
+            libxfixes3 \
+            libxkbcommon0 \
+            libxrandr2 \
+            libxshmfence1 \
+            libxss1
+          fc-list | grep -i "noto sans cjk" | head -2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: |
+          npm ci --ignore-scripts
+          node_modules/.bin/mmdc --version
+
+      - name: Build EPUB
+        run: |
+          export PUPPETEER_EXECUTABLE_PATH="$(command -v google-chrome-stable || command -v chromium || command -v chromium-browser)"
+          test -n "$PUPPETEER_EXECUTABLE_PATH"
+          "$PUPPETEER_EXECUTABLE_PATH" --version
+          node book/postprocess.js
+          node book/validate-render.js
+          node book/validate-render.test.js
+          node book/build-epub.mjs book/pi-agent-handbook.epub
+
+      - name: Validate EPUB
+        run: |
+          test -f book/pi-agent-handbook.epub
+          unzip -l book/pi-agent-handbook.epub | head -20
+          chapter_count=$(unzip -l book/pi-agent-handbook.epub | grep -c "content/.*\.xhtml$" || true)
+          echo "Chapter count: $chapter_count"
+          test "$chapter_count" -ge 20
+
+      - name: Upload EPUB artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pi-agent-handbook-epub
+          path: book/pi-agent-handbook.epub
+          retention-days: 90
+          if-no-files-found: error
+
+      - name: Upload cover artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pi-agent-handbook-cover
+          path: book/cover/cover.svg
+          retention-days: 90
+          if-no-files-found: error
+
+  publish-pages:
+    name: Publish to gh-pages
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/book'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download EPUB artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pi-agent-handbook-epub
+          path: ./download
+
+      - name: Download cover artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pi-agent-handbook-cover
+          path: ./download
+
+      - name: Prepare Pages content
+        run: |
+          mkdir -p /tmp/gh-pages
+          cp download/pi-agent-handbook.epub /tmp/gh-pages/
+          cp download/cover.svg /tmp/gh-pages/
+          asset_version="${GITHUB_SHA::7}"
+          cat > /tmp/gh-pages/index.html <<HTML
+          <!doctype html>
+          <html lang="zh-CN">
+          <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>Pi Agent 源码实战指南</title>
+            <meta name="description" content="基于 zenHeart/pi fork 源码与 docs 的 Coding Agent 专家教材。">
+            <meta name="theme-color" content="#f7f3ec">
+            <style>
+              :root {
+                color-scheme: light dark;
+                --bg: #f7f3ec;
+                --text: #17191f;
+                --muted: #626a75;
+                --line: rgba(23, 25, 31, .14);
+                --panel: rgba(255, 255, 255, .62);
+                --accent: #9a4f36;
+                --accent-dark: #743725;
+              }
+
+              @media (prefers-color-scheme: dark) {
+                :root {
+                  --bg: #101418;
+                  --text: #f2eee7;
+                  --muted: #a9b0ba;
+                  --line: rgba(242, 238, 231, .16);
+                  --panel: rgba(255, 255, 255, .06);
+                  --accent: #d77856;
+                  --accent-dark: #f09272;
+                }
+              }
+
+              * {
+                box-sizing: border-box;
+              }
+
+              body {
+                min-height: 100vh;
+                margin: 0;
+                background: var(--bg);
+                color: var(--text);
+                font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+                line-height: 1.6;
+              }
+
+              .page {
+                display: grid;
+                width: min(1080px, calc(100% - 36px));
+                min-height: 100vh;
+                margin: 0 auto;
+                grid-template-rows: 1fr auto;
+              }
+
+              .hero {
+                display: grid;
+                grid-template-columns: minmax(0, 1fr) minmax(260px, 360px);
+                gap: clamp(32px, 7vw, 80px);
+                align-items: center;
+                padding: clamp(36px, 8vh, 72px) 0 28px;
+              }
+
+              .eyebrow {
+                margin: 0 0 14px;
+                color: var(--accent-dark);
+                font-size: 13px;
+                font-weight: 750;
+                letter-spacing: .08em;
+                text-transform: uppercase;
+              }
+
+              h1 {
+                max-width: 720px;
+                margin: 0;
+                color: var(--accent);
+                font-size: clamp(44px, 7vw, 86px);
+                line-height: 1;
+                letter-spacing: 0;
+              }
+
+              .lead {
+                max-width: 680px;
+                margin: 24px 0 0;
+                font-size: clamp(17px, 2vw, 22px);
+              }
+
+              .stats {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 10px;
+                margin: 28px 0 0;
+                padding: 0;
+                list-style: none;
+              }
+
+              .stats li {
+                border: 1px solid var(--line);
+                border-radius: 999px;
+                padding: 6px 12px;
+                background: var(--panel);
+                color: var(--muted);
+                font-size: 14px;
+                font-weight: 700;
+              }
+
+              .actions {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 14px;
+                align-items: center;
+                margin-top: 36px;
+              }
+
+              .button {
+                display: inline-flex;
+                min-height: 50px;
+                align-items: center;
+                justify-content: center;
+                border-radius: 8px;
+                padding: 0 22px;
+                background: var(--accent);
+                color: #fff;
+                font-weight: 800;
+                text-decoration: none;
+              }
+
+              .link {
+                color: var(--muted);
+                font-weight: 750;
+                text-underline-offset: 5px;
+              }
+
+              .cover {
+                width: 100%;
+                max-height: 68vh;
+                border-radius: 8px;
+                box-shadow: 0 26px 70px rgba(0, 0, 0, .22);
+              }
+
+              footer {
+                border-top: 1px solid var(--line);
+                padding: 16px 0 22px;
+                color: var(--muted);
+                font-size: 14px;
+              }
+
+              @media (max-width: 760px) {
+                .hero {
+                  grid-template-columns: 1fr;
+                }
+
+                .cover {
+                  width: min(78vw, 320px);
+                }
+              }
+            </style>
+          </head>
+          <body>
+            <main class="page">
+              <section class="hero" aria-labelledby="title">
+                <div>
+                  <p class="eyebrow">ZenHeart · Pi Agent Handbook</p>
+                  <h1 id="title">Pi Agent 源码实战指南</h1>
+                  <p class="lead">基于 pi 源码与 docs 的 Coding Agent 实战教材，覆盖终端使用、Agent 内核、扩展生态、模型 Provider、SDK/RPC 与团队落地。</p>
+                  <ul class="stats" aria-label="书籍规模">
+                    <li>40 章</li>
+                    <li>8 个部分</li>
+                    <li>源码对照</li>
+                    <li>自动构建 EPUB</li>
+                  </ul>
+                  <div class="actions">
+                    <a class="button" href="pi-agent-handbook.epub?v=${asset_version}" download="pi-agent-handbook.epub">下载 EPUB</a>
+                    <a class="link" href="https://github.com/zenHeart/pi/tree/codex/pi-book-rewrite">查看 GitHub 源码</a>
+                  </div>
+                </div>
+                <img class="cover" src="cover.svg?v=${asset_version}" alt="Pi Agent 源码实战指南 EPUB 封面">
+              </section>
+              <footer>由 GitHub Actions 在 book 分支推送时自动构建并发布到 gh-pages。</footer>
+            </main>
+          </body>
+          </html>
+          HTML
+          grep -q "Pi Agent 源码实战指南" /tmp/gh-pages/index.html
+          grep -q "40 章" /tmp/gh-pages/index.html
+          grep -q "cover.svg?v=${asset_version}" /tmp/gh-pages/index.html
+          grep -q "pi-agent-handbook.epub?v=${asset_version}" /tmp/gh-pages/index.html
+          grep -q "源码实战指南" /tmp/gh-pages/cover.svg
+          grep -q "40 章 · 源码对照版" /tmp/gh-pages/cover.svg
+
+      - name: Publish to gh-pages branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin gh-pages || true
+          if git rev-parse --verify origin/gh-pages >/dev/null 2>&1; then
+            git checkout gh-pages
+            git pull origin gh-pages
+          else
+            git checkout --orphan gh-pages
+            git rm -rf . || true
+          fi
+          cp /tmp/gh-pages/* .
+          touch .nojekyll
+          grep -q "Pi Agent 源码实战指南" index.html
+          grep -q "40 章" index.html
+          grep -q "源码实战指南" cover.svg
+          grep -q "40 章 · 源码对照版" cover.svg
+          git add pi-agent-handbook.epub cover.svg index.html .nojekyll
+          if git diff --staged --quiet; then
+            echo "No changes to publish"
+          else
+            git commit -m "auto: update EPUB from ${GITHUB_SHA::7}"
+            git push origin gh-pages
+          fi

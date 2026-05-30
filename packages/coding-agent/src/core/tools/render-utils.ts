@@ -1,10 +1,7 @@
 import * as os from "node:os";
-import { pathToFileURL } from "node:url";
 import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
-import { getCapabilities, getImageDimensions, hyperlink, imageFallback } from "@earendil-works/pi-tui";
-import type { Theme } from "../../modes/interactive/theme/theme.ts";
+import { getCapabilities, getImageDimensions, imageFallback } from "@earendil-works/pi-tui";
 import { stripAnsi } from "../../utils/ansi.ts";
-import { resolvePath } from "../../utils/paths.ts";
 import { sanitizeBinaryOutput } from "../../utils/shell.ts";
 
 export function shortenPath(path: unknown): string {
@@ -14,12 +11,6 @@ export function shortenPath(path: unknown): string {
 		return `~${path.slice(home.length)}`;
 	}
 	return path;
-}
-
-export function linkPath(styledText: string, rawPath: string, cwd: string): string {
-	if (!getCapabilities().hyperlinks) return styledText;
-	const absolutePath = resolvePath(rawPath, cwd);
-	return hyperlink(styledText, pathToFileURL(absolutePath).href);
 }
 
 export function str(value: unknown): string | null {
@@ -68,18 +59,6 @@ export type ToolRenderResultLike<TDetails> = {
 	details: TDetails;
 };
 
-export function invalidArgText(theme: Theme): string {
+export function invalidArgText(theme: { fg: (name: any, text: string) => string }): string {
 	return theme.fg("error", "[invalid arg]");
-}
-
-export function renderToolPath(
-	rawPath: string | null,
-	theme: Theme,
-	cwd: string,
-	options?: { emptyFallback?: string },
-): string {
-	if (rawPath === null) return invalidArgText(theme);
-	const value = rawPath || options?.emptyFallback;
-	if (!value) return theme.fg("toolOutput", "...");
-	return linkPath(theme.fg("accent", shortenPath(value)), value, cwd);
 }
