@@ -126,3 +126,31 @@ export class TUI extends Container {
 - 能让 Escape 中断真实运行中的任务。
 - 能在 session replacement 后重新绑定 UI。
 - 能说明 keybinding action id 和具体按键的区别。
+
+## 15.10 本章实现关卡
+
+本章只实现 mini TUI 的最小可用交互，不追求 Pi 完整终端体验。
+
+新增文件：
+
+- `src/host/interactive-host.ts`：订阅 session events，维护输入状态。
+- `src/tui/terminal.ts`：封装 raw input、resize、write。
+- `src/tui/event-log.ts`：渲染 assistant delta、tool start、tool result。
+- `src/tui/keybindings.ts`：用 action id 表达 `abort`、`submit`、`newline`。
+
+最小行为：
+
+```text
+> read package
+assistant: I will inspect package.json
+tool read package.json: ok
+assistant: package name is ...
+```
+
+运行观察：
+
+```bash
+npm run mini -- --mode interactive
+```
+
+期望按 Escape 会触发 `session.abort()`，不是只停 spinner。失败样例是 TUI 自己保存 transcript，导致 json host 和 interactive host 看到不同历史。下一章会把所有执行能力纳入安全策略。

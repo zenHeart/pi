@@ -123,3 +123,28 @@ compaction 不是删除历史，而是在未来 context 中用 summary 替代旧
 - 能从 leafId 重建上下文。
 - 能实现 fork 不复制全部历史。
 - 能说明 compaction entry 如何影响未来 context。
+
+## 11.10 本章实现关卡
+
+本章把 mini Pi 从内存 transcript 升级为 append-only JSONL session DAG。
+
+新增文件：
+
+- `src/session/entry.ts`：定义 header、message、model_change、compaction entry。
+- `src/session/jsonl-store.ts`：一行一个 entry，append 时更新 leaf。
+- `src/session/build-context.ts`：从 leaf 沿 parentId 回溯上下文。
+
+最小 entry：
+
+```json
+{"type":"message","id":"e2","parentId":"e1","timestamp":"2026-05-31T00:00:00.000Z","message":{"role":"user","content":"hello"}}
+```
+
+运行观察：
+
+```bash
+npm run mini -- --session tmp/session.jsonl -p "hello"
+npm run mini -- --session tmp/session.jsonl --dump-context
+```
+
+期望第二条命令从 leaf 重建 user/assistant messages。失败样例是 fork 复制整个 messages 数组，无法表达共享祖先。下一章会加入 compaction entry。

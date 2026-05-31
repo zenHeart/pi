@@ -17,6 +17,8 @@ pi
 
 text print 输出最终 assistant 文本；json 输出事件流；RPC 接收 JSONL 命令；interactive 渲染 TUI。它们的核心 session 语义必须一致。
 
+真实使用面以 docs 为准：CLI mode 说明见 [usage.md#L144](packages/coding-agent/docs/usage.md#L144)，JSON mode 说明见 [json.md#L1](packages/coding-agent/docs/json.md#L1)，RPC mode 的 command/response/event/framing 说明见 [rpc.md#L19](packages/coding-agent/docs/rpc.md#L19)。
+
 ## 14.3 源码定位
 
 | 责任 | 当前实现 |
@@ -129,3 +131,36 @@ export function takeOverStdout(): void {
 - 能保证 JSON stdout 不被日志污染。
 - 能实现 session replacement 后 rebind。
 - 能用 JSONL framing 写一个简单 RPC client。
+
+## 14.10 本章实现关卡
+
+本章把 mini Pi 的 text/json/rpc 都实现为 host adapter。
+
+新增文件：
+
+- `src/host/text-host.ts`：订阅事件并打印最终 assistant 文本。
+- `src/host/json-host.ts`：每个 event 一行 JSON。
+- `src/host/rpc-host.ts`：stdin/stdout JSONL request/response/event。
+- `src/host/stdout-guard.ts`：机器协议模式下普通日志写 stderr。
+
+真实 Pi JSON mode 输出的是 `AgentSessionEvent`。第一行是 session header，之后是 `agent_start`、`turn_start`、`message_start`、`message_update`、`tool_execution_start` 等事件，文档入口见 [json.md#L58](packages/coding-agent/docs/json.md#L58)，事件类型表见 [json.md#L9](packages/coding-agent/docs/json.md#L9)。
+
+真实事件样例：
+
+```json
+{"type":"message_update","message":{...},"assistantMessageEvent":{"type":"text_delta","contentIndex":0,"delta":"Hello","partial":{...}}}
+```
+
+mini JSON host 可以先输出更小的事件子集，但必须标注为 mini host event，不要把它当成 Pi JSON mode 兼容格式：
+
+```json
+{"type":"assistant_delta","sessionId":"s1","delta":"I will inspect package.json"}
+```
+
+运行观察：
+
+```bash
+npm run mini -- --mode json -p "hello" | node scripts/assert-json-lines.js
+```
+
+期望 stdout 每一行都是合法 JSON。真实 RPC mode 还要求只按 LF 分隔 JSON record，不能使用会按 Unicode line separator 切分的通用 line reader，见 [rpc.md#L27](packages/coding-agent/docs/rpc.md#L27)。失败样例是 `console.log("debug")` 污染 stdout。下一章会把 interactive TUI 实现为同一 host contract 的可选增强。

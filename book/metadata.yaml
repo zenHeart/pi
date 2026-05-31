@@ -3,9 +3,9 @@ subtitle: "从源码边界到可运行 Coding Agent"
 author: "ZenHeart"
 language: "zh-CN"
 date: "2026-05-31"
-version: "6.0.0"
+version: "8.0.0"
 publisher: "ZenHeart"
-description: "一本面向完全不了解 Pi 的工程师的源码复刻教材，围绕 Pi 的核心概念、使用方式、运行原理和设计边界组织。"
+description: "一本面向完全不了解 Pi 的工程师的源码复刻教材，围绕 Pi 的源码边界、mini 实现、协议样例、测试回放和生产审计组织。"
 rights: "Copyright © 2026 ZenHeart"
 
 chapters:
@@ -31,6 +31,19 @@ chapters:
       - chapter-14-host-adapters.md
       - chapter-15-interactive-tui.md
       - chapter-16-safety-diagnostics-production.md
+  - part: "第 4 部分：贯穿实现、协议、测试与审计"
+    items:
+      - chapter-17-mini-pi-implementation.md
+      - chapter-18-protocol-data-structures.md
+      - chapter-19-faux-provider-tests.md
+      - chapter-20-final-replication-audit.md
+  - part: "第 5 部分：完整产品复刻附录"
+    items:
+      - chapter-21-package-resources-themes.md
+      - chapter-22-rpc-extension-ui-html-export.md
+      - chapter-23-interactive-product-surface.md
+      - chapter-24-complete-replication-matrix.md
+      - chapter-25-course-exercises-faq.md
 
 pi_repo: "https://github.com/zenHeart/pi"
 source_ref: "book"

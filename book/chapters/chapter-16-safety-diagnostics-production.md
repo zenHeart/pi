@@ -129,3 +129,31 @@ const ensureTempFile = () => {
 - 能在错误时判断属于 provider、tool、session、resource 还是 host。
 - 能用 faux provider 跑通 agent loop、tool call、session persistence、compaction 的回归测试。
 - 能给自己的 mini Pi 写一份 P0/P1 审计清单：权限、凭证、stdout、工具回灌、session DAG、compaction、extension stale context、TUI abort。
+
+## 16.10 本章实现关卡
+
+本章把 mini Pi 的默认策略固定下来，防止“能跑”但不可审计。
+
+新增文件：
+
+- `src/security/policy.ts`：定义只读、写入、bash、extension 四种策略。
+- `src/security/redaction.ts`：避免敏感值进入 JSON/event/log。
+- `src/diagnostics/report.ts`：聚合启动、resource、provider、tool、session、host 错误。
+- `src/tests/audit-checklist.ts`：检查 P0 不变量。
+
+最小策略矩阵：
+
+| 模式 | read | write | bash | extension |
+|---|---:|---:|---:|---:|
+| review | 是 | 否 | 否 | 否 |
+| edit | 是 | 是 | 否 | 否 |
+| local-dev | 是 | 是 | 是 | 否 |
+| trusted-extension | 是 | 是 | 是 | 是 |
+
+运行观察：
+
+```bash
+npm run mini -- --tools read -p "write a file"
+```
+
+期望模型即使请求 `write`，runtime 也返回 blocked toolResult 并写入 session。失败样例是只读模式下 prompt injection 仍能写文件。第 17 章会把前 16 章产物组装成完整 mini agent。

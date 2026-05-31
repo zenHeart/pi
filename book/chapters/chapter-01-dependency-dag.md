@@ -123,3 +123,40 @@ export function streamSimple<TApi extends Api>(
 - 能解释 `pi-ai` 为什么不应该知道文件系统。
 - 能定义六个核心接口，并指出每个接口的禁止依赖。
 - 能用最小实现跑通一次用户输入、模型回复、事件输出。
+
+## 1.10 本章实现关卡
+
+本章把 mini Pi 的骨架固定下来，不写业务实现，只定义边界。
+
+新增文件：
+
+- `src/core/interfaces.ts`：定义 `Provider`、`Tool`、`SessionStore`、`Agent`、`Runtime`、`Host`。
+- `src/core/events.ts`：定义 provider event、agent event、tool result event 的最小 union。
+- `src/index.ts`：导出公开接口，后续章节只通过这些接口连接模块。
+
+最小接口形状：
+
+```ts
+export interface Provider {
+  stream(context: ModelContext, signal: AbortSignal): AsyncIterable<AssistantEvent>;
+}
+
+export interface Tool {
+  name: string;
+  schema: ToolSchema;
+  execute(args: unknown, signal: AbortSignal): Promise<ToolResultMessage>;
+}
+
+export interface SessionStore {
+  append(entry: SessionEntry): Promise<string>;
+  buildContext(leafId?: string): Promise<AgentContext>;
+}
+```
+
+运行观察：
+
+```bash
+npm run mini -- --dry-run-interfaces
+```
+
+期望输出是六个边界名和依赖方向：`Host -> Runtime -> Agent -> Provider/Tool -> Session`。失败样例是 `Provider` 依赖 `Tool` 或 `Host` 直接写 session；这说明边界已经反向。下一章会把 CLI 参数分发到 `Host` 和 `Runtime`。

@@ -133,3 +133,33 @@ const response = await streamFunction(config.model, llmContext, {
 - 能在 provider stream 前解析 API key。
 - 能让用户中断同时影响 stream 和工具。
 - 能说明 steering 与 follow-up 的差异。
+
+## 8.10 本章实现关卡
+
+本章实现 mini Pi 的核心闭环：用户消息、模型流、工具调用、toolResult、再次请求模型。
+
+新增文件：
+
+- `src/agent/agent-loop.ts`：显式 `while` 循环，不使用递归 completion。
+- `src/agent/context.ts`：把 session context 转成 provider context。
+- `src/agent/abort.ts`：每轮创建 `AbortController`。
+
+最小循环骨架：
+
+```ts
+while (true) {
+  const assistant = await streamAssistant(context, provider, signal);
+  const calls = assistant.content.filter((part) => part.type === "toolCall");
+  if (calls.length === 0) break;
+  const results = await executeToolCalls(calls, tools, signal);
+  context.messages.push(assistant, ...results);
+}
+```
+
+运行观察：
+
+```bash
+npm run mini -- --provider faux -p "read package"
+```
+
+期望 faux provider 第一次请求工具，runtime 执行工具后第二次请求模型并输出总结。失败样例是工具结果没有进入下一轮 context。下一章会实现工具 registry 和 executor。

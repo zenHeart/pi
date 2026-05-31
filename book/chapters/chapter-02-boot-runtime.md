@@ -121,3 +121,32 @@ let sessionManager = await createSessionManager(parsed, cwd, sessionDir, startup
 - 能写出不会污染 JSON stdout 的错误输出策略。
 - 能实现恢复 session 前不创建 cwd-bound services。
 - 能从命令行跑通 print 和 interactive 共用同一 runtime。
+
+## 2.10 本章实现关卡
+
+本章让 mini Pi 从命令行启动，但仍不调用真实模型。
+
+新增文件：
+
+- `src/cli/args.ts`：解析 `-p`、`--mode text|json|interactive`、`--session`、`--cwd`。
+- `src/cli/mode.ts`：根据 stdin 是否是 TTY 和参数决定 host mode。
+- `src/main.ts`：执行 `parseArgs -> resolveMode -> resolveSessionTarget -> createRuntime -> runHost`。
+
+最小实现规则：
+
+```ts
+const parsed = parseArgs(process.argv.slice(2));
+const mode = resolveMode(parsed, process.stdin.isTTY);
+const target = await resolveSessionTarget(parsed, process.cwd());
+const runtime = await createRuntime(target);
+await runHost(mode, runtime, parsed.prompt);
+```
+
+运行观察：
+
+```bash
+npm run mini -- -p "hello"
+npm run mini -- --mode json -p "hello"
+```
+
+text 模式只打印最终 assistant 文本；json 模式每行只打印 JSON event。失败样例是在 json stdout 中出现 warning 或彩色日志。下一章会让 `createRuntime()` 创建 cwd 绑定服务。

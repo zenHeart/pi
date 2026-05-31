@@ -81,6 +81,8 @@ function validate() {
     join(EPUB_DIR, "content.opf"),
     join(EPUB_DIR, "toc.ncx"),
     join(EPUB_DIR, "nav.xhtml"),
+    join(EPUB_DIR, "cover.xhtml"),
+    join(EPUB_DIR, "cover.svg"),
     ...listFiles(CONTENT_DIR, (file) => file.endsWith(".xhtml")),
     ...listFiles(MERMAID_DIR, (file) => file.endsWith(".svg")),
   ].filter((file) => existsSync(file));

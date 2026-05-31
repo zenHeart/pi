@@ -125,3 +125,33 @@ function loadContextFileFromDir(dir: string): { path: string; content: string } 
 - 能加载 AGENTS/CLAUDE 并注入 system prompt。
 - 能让 active tools 与工具说明一致。
 - 能解释 skill、prompt template、extension 的差异。
+
+## 10.10 本章实现关卡
+
+本章让 mini Pi 的模型上下文来自 ResourceLoader，而不是硬编码 prompt。
+
+新增文件：
+
+- `src/resources/context-files.ts`：加载当前 cwd 的规则文件。
+- `src/resources/prompt-builder.ts`：拼接日期、cwd、规则、active tool snippets。
+- `src/resources/templates.ts`：保存 prompt template 元数据，暂不实现复杂渲染。
+
+最小 system prompt 结构：
+
+```text
+You are a local coding agent.
+Current cwd: <cwd>
+Available tools: read, write, bash
+Project instructions:
+<context file content>
+Tool rules:
+<active tool snippets only>
+```
+
+运行观察：
+
+```bash
+npm run mini -- --debug-prompt -p "hello"
+```
+
+期望输出的工具说明只包含 active tools。失败样例是禁用 `write` 后 prompt 仍告诉模型可以写文件。下一章会把 prompt、messages、tool results 写入 JSONL session。

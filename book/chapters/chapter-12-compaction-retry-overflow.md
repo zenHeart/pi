@@ -126,3 +126,27 @@ if (sameModel && isContextOverflow(assistantMessage, contextWindow)) {
 - 能区分 overflow recovery 和 ordinary retry。
 - 能保证 overflow 自动恢复最多一次。
 - 能说明 `firstKeptEntryId` 的作用。
+
+## 12.10 本章实现关卡
+
+本章给 mini Pi 添加教学级 compaction：不调用真实总结模型，先用 faux summarizer 生成 summary entry。
+
+新增文件：
+
+- `src/session/compaction.ts`：按 token 估算决定是否压缩。
+- `src/session/summary.ts`：生成 summary 和 `firstKeptEntryId`。
+- `src/agent/retry.ts`：区分 overflow、429/500、普通错误。
+
+最小 compaction entry：
+
+```json
+{"type":"compaction","id":"c1","parentId":"e9","summary":"User asked to inspect package metadata.","firstKeptEntryId":"e7","tokensBefore":41000}
+```
+
+运行观察：
+
+```bash
+npm run mini -- --session tmp/long.jsonl --compact
+```
+
+期望 JSONL 只追加 compaction entry，不删除历史行。失败样例是压缩时删除旧 JSONL，导致审计和 fork 无法恢复。下一章会把 extension 作为可选增强边界。

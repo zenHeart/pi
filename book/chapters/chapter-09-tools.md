@@ -23,6 +23,7 @@ pi "edit the file and run the targeted check"
 | 工具名称集合 | [index.ts#L81](packages/coding-agent/src/core/tools/index.ts#L81) |
 | 创建 tool definition | [index.ts#L96](packages/coding-agent/src/core/tools/index.ts#L96) |
 | 创建 runtime tool | [index.ts#L117](packages/coding-agent/src/core/tools/index.ts#L117) |
+| ToolResultMessage 真实类型 | [types.ts#L292](packages/ai/src/types.ts#L292) |
 | read schema/execute | [read.ts#L206](packages/coding-agent/src/core/tools/read.ts#L206) |
 | bash schema/execute | [bash.ts#L269](packages/coding-agent/src/core/tools/bash.ts#L269) |
 | write schema/execute | [write.ts#L181](packages/coding-agent/src/core/tools/write.ts#L181) |
@@ -131,3 +132,38 @@ export async function withFileMutationQueue<T>(filePath: string, fn: () => Promi
 - 能让 toolResult 回灌给下一轮模型。
 - 能串行化同一文件写入。
 - 能构造只读工具模式。
+
+## 9.10 本章实现关卡
+
+本章给 mini Pi 增加 `read`、`write`、`bash` 三个基础工具。
+
+新增文件：
+
+- `src/tools/registry.ts`：按 active tool 过滤模型可见 schema。
+- `src/tools/read.ts`：读取 cwd 内文件。
+- `src/tools/write.ts`：写入文件并进入 mutation queue。
+- `src/tools/bash.ts`：执行命令、截断输出、支持 abort。
+
+真实 Pi 的 tool result 类型来自 `pi-ai`，不是 `role: "tool"`。字段以 [types.ts#L292](packages/ai/src/types.ts#L292) 和 session format 文档 [session-format.md#L93](packages/coding-agent/docs/session-format.md#L93) 为准：
+
+```ts
+export interface ToolResultMessage {
+  role: "toolResult";
+  toolCallId: string;
+  toolName: string;
+  content: (TextContent | ImageContent)[];
+  details?: unknown;
+  isError: boolean;
+  timestamp: number;
+}
+```
+
+mini 教学实现如果想用 `{ ok: boolean, content: string }` 作为内部便利结构，必须在进入 provider context 和 JSONL session 前转换成上面的真实形状。否则它只能算 Pi-like 教学协议，不能算兼容 Pi session 或 RPC message。
+
+运行观察：
+
+```bash
+npm run mini -- --tools read -p "read package"
+```
+
+期望模型只能看到 `read` schema，调用 `write` 会得到结构化错误 toolResult。失败样例是 schema 校验异常直接抛出，导致 loop 结束且模型看不到失败原因。下一章会把工具说明注入 system prompt。

@@ -45,12 +45,12 @@ sequenceDiagram
     Stream->>Adapter: normalized context
     Adapter->>Model: provider-native request
     Model-->>Adapter: provider-native stream
-    Adapter-->>Core: start/text_delta/toolcall_end/done/error
+    Adapter-->>Core: start + content events + done/error
 ```
 
 ## 5.5 关键代码片段
 
-源码位置：[types.ts#L327](packages/ai/src/types.ts#L327)。片段之后继续看 stream event union：[types.ts#L340](packages/ai/src/types.ts#L340)。
+源码位置：[types.ts#L327](packages/ai/src/types.ts#L327)。片段之后继续看 stream event union：[types.ts#L347](packages/ai/src/types.ts#L347)。custom provider 文档也按同一顺序要求 adapter 推送 start、content events、done/error，见 [custom-provider.md#L448](packages/coding-agent/docs/custom-provider.md#L448)。
 
 ```ts
 export interface Context {
@@ -61,13 +61,20 @@ export interface Context {
 
 export type AssistantMessageEvent =
   | { type: "start"; partial: AssistantMessage }
+  | { type: "text_start"; contentIndex: number; partial: AssistantMessage }
   | { type: "text_delta"; contentIndex: number; delta: string; partial: AssistantMessage }
+  | { type: "text_end"; contentIndex: number; content: string; partial: AssistantMessage }
+  | { type: "thinking_start"; contentIndex: number; partial: AssistantMessage }
+  | { type: "thinking_delta"; contentIndex: number; delta: string; partial: AssistantMessage }
+  | { type: "thinking_end"; contentIndex: number; content: string; partial: AssistantMessage }
+  | { type: "toolcall_start"; contentIndex: number; partial: AssistantMessage }
+  | { type: "toolcall_delta"; contentIndex: number; delta: string; partial: AssistantMessage }
   | { type: "toolcall_end"; contentIndex: number; toolCall: ToolCall; partial: AssistantMessage }
   | { type: "done"; reason: Extract<StopReason, "stop" | "length" | "toolUse">; message: AssistantMessage }
   | { type: "error"; reason: Extract<StopReason, "aborted" | "error">; error: AssistantMessage };
 ```
 
-解释：输入给 provider 的是标准 `Context`，而不是 Pi 的 session entry。输出是标准 assistant stream 事件，而不是 vendor raw event。复刻最小版可以只实现 `start/text_delta/done`，但 tool calling 必须尽早加入，因为 Agent loop 的闭环依赖 `toolcall_end`。
+解释：输入给 provider 的是标准 `Context`，而不是 Pi 的 session entry。输出是标准 assistant stream 事件，而不是 vendor raw event。真实 Pi 事件里，tool call 的完整字段名是 `toolCall`，参数字段在 content block 中叫 `arguments`，custom provider 文档示例见 [custom-provider.md#L512](packages/coding-agent/docs/custom-provider.md#L512)。复刻最小版可以先实现 `start/text_delta/done` 子集，但只要加入工具调用，就必须保留 `toolcall_end.toolCall` 这种真实语义，避免把教学字段 `call/args` 当成 Pi 协议。
 
 源码位置：[api-registry.ts#L66](packages/ai/src/api-registry.ts#L66)。片段之后继续看调用方如何通过 `streamSimple()` 分发：[stream.ts#L43](packages/ai/src/stream.ts#L43)。
 
@@ -123,3 +130,40 @@ export function registerApiProvider<TApi extends Api, TOptions extends StreamOpt
 - 能把 provider raw stream 转成统一事件。
 - 能在 event 协议中表达 tool call 和 error。
 - 能说明为什么 `pi-ai` 不保存 session。
+
+## 5.10 本章实现关卡
+
+本章让 mini Pi 拥有第一个 provider：faux provider。它不访问网络，只按脚本输出标准事件。
+
+新增文件：
+
+- `src/provider/types.ts`：定义 `ModelContext`、`AssistantEvent`、`Model`。
+- `src/provider/faux.ts`：根据输入消息返回 text 或 tool call。
+- `src/provider/registry.ts`：按 `model.api` 找 stream adapter。
+
+最小事件流：
+
+```ts
+yield { type: "start", partial: assistant };
+yield { type: "text_start", contentIndex: 0, partial: assistant };
+yield { type: "text_delta", contentIndex: 0, delta: "I will inspect the file.", partial: assistant };
+yield { type: "text_end", contentIndex: 0, content: "I will inspect the file.", partial: assistant };
+yield { type: "toolcall_start", contentIndex: 1, partial: assistant };
+yield {
+  type: "toolcall_end",
+  contentIndex: 1,
+  toolCall: { type: "toolCall", id: "call_1", name: "read", arguments: { path: "package.json" } },
+  partial: assistant,
+};
+yield { type: "done", reason: "toolUse", message: assistant };
+```
+
+这是“接近真实 Pi”的事件形状。教学版 faux provider 可以内部少发 `*_start`/`*_end`，但第 18 章会要求在真实协议映射处恢复完整事件名和字段名。
+
+运行观察：
+
+```bash
+npm run mini -- --provider faux -p "read package"
+```
+
+期望 host 能看到 text delta 和 tool call event，但工具还不执行。失败样例是 provider 直接读文件。下一章会把 provider 和 model/auth 解析分开。

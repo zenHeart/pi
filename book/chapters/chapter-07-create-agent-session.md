@@ -114,3 +114,32 @@ agent = new Agent({
 - 能让 CLI 和 SDK 共享同一个 session facade。
 - 能在 streamFn 中请求前解析 auth。
 - 能从旧 session 恢复模型或给出 fallback。
+
+## 7.10 本章实现关卡
+
+本章实现 mini 版 `createAgentSession()`，让 CLI 和未来 SDK 都拿同一个 facade。
+
+新增文件：
+
+- `src/runtime/create-agent-session.ts`：汇合 services、session store、provider registry、tool registry。
+- `src/runtime/agent-session.ts`：暴露 `prompt()`、`abort()`、`subscribe()`、`dispose()`。
+- `src/runtime/subscriber.ts`：实现事件订阅。
+
+最小 facade：
+
+```ts
+export interface AgentSessionFacade {
+  prompt(input: string): Promise<void>;
+  abort(): void;
+  subscribe(listener: (event: AgentEvent) => void): () => void;
+  dispose(): void;
+}
+```
+
+运行观察：
+
+```bash
+npm run mini -- --mode json -p "hello"
+```
+
+真实 Pi JSON mode 的第一行是 session header，随后输出 `AgentSessionEvent`，格式见 [json.md#L58](packages/coding-agent/docs/json.md#L58)。mini 版这一关至少应输出 `turn_start`、`message_update`、`turn_end` 这类真实事件名；如果内部先用 `session_start`、`assistant_delta` 这样的教学事件，必须在 public JSON host 前转换，不能称为 Pi JSON 兼容。失败样例是 CLI 直接调用 provider，绕过 session persistence。下一章会实现 agent loop。

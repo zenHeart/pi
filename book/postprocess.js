@@ -15,6 +15,7 @@ const CHAPTERS_DIR = join(__dirname, "chapters");
 const OUTPUT_DIR = join(__dirname, "epub-content");
 const MERMAID_DIR = join(OUTPUT_DIR, "mermaid");
 const METADATA_FILE = join(__dirname, "metadata.yaml");
+const COVER_FILE = join(__dirname, "cover", "cover.svg");
 const MERMAID_CONFIG_FILE = join(__dirname, "mermaid-config.json");
 const PUPPETEER_CONFIG_FILE = join(__dirname, "puppeteer-config.json");
 let mermaidCounter = 0;
@@ -229,7 +230,14 @@ ${points}
 </ncx>`;
 }
 
-function generateContentOpf(metadata, chapters, assets) {
+function generateContentOpf(metadata, chapters, assets, hasCover) {
+  const coverMeta = hasCover ? `    <meta name="cover" content="cover-image"/>
+` : "";
+  const coverManifestItems = hasCover
+    ? `    <item id="cover-page" media-type="application/xhtml+xml" href="cover.xhtml"/>
+    <item id="cover-image" media-type="image/svg+xml" href="cover.svg" properties="cover-image"/>
+`
+    : "";
   const manifestItems = chapters
     .map(
       (ch, index) =>
@@ -239,6 +247,8 @@ function generateContentOpf(metadata, chapters, assets) {
   const assetItems = assets
     .map((asset, index) => `    <item id="mermaid${index + 1}" media-type="image/svg+xml" href="mermaid/${asset}"/>`)
     .join("\n");
+  const coverSpineItem = hasCover ? `    <itemref idref="cover-page"/>
+` : "";
   const spineItems = chapters.map((_ch, index) => `    <itemref idref="chapter${index + 1}"/>`).join("\n");
 
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -248,18 +258,40 @@ function generateContentOpf(metadata, chapters, assets) {
     <dc:title>${escapeHtml(metadata.title)}</dc:title>
     <dc:creator>${escapeHtml(metadata.author)}</dc:creator>
     <dc:language>${escapeHtml(metadata.lang)}</dc:language>
-    <meta property="dcterms:modified">2026-05-25T00:00:00Z</meta>
+${coverMeta}    <meta property="dcterms:modified">2026-05-25T00:00:00Z</meta>
   </metadata>
   <manifest>
     <item id="ncx" media-type="application/x-dtbncx+xml" href="toc.ncx"/>
     <item id="nav" media-type="application/xhtml+xml" href="nav.xhtml" properties="nav"/>
+${coverManifestItems}
 ${manifestItems}
 ${assetItems}
   </manifest>
   <spine toc="ncx">
+${coverSpineItem}
 ${spineItems}
   </spine>
 </package>`;
+}
+
+function generateCoverXhtml(metadata) {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <title>${escapeHtml(metadata.title)}封面</title>
+  <style>
+    body { margin: 0; background: #fbfaf6; }
+    .cover-page { min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+    img { display: block; width: 100%; max-width: 400px; height: auto; }
+  </style>
+</head>
+<body>
+  <section class="cover-page" aria-label="${escapeHtml(metadata.title)}封面">
+    <img src="cover.svg" alt="${escapeHtml(metadata.title)}封面"/>
+  </section>
+</body>
+</html>`;
 }
 
 function generateNavXhtml(metadata, chapters) {
@@ -293,6 +325,7 @@ ${items}
 
 function postprocess() {
   const metadata = readMetadata();
+  const hasCover = existsSync(COVER_FILE);
   const chapters = metadata.chapters.map((chapter) => ({
     ...chapter,
     title: getChapterTitle(chapter.file),
@@ -310,6 +343,12 @@ function postprocess() {
   for (const file of readdirSync(MERMAID_DIR)) {
     if (file.endsWith(".svg")) {
       unlinkSync(join(MERMAID_DIR, file));
+    }
+  }
+  for (const file of ["cover.xhtml", "cover.svg"]) {
+    const target = join(OUTPUT_DIR, file);
+    if (existsSync(target)) {
+      unlinkSync(target);
     }
   }
 
@@ -343,9 +382,14 @@ ${html}
     writeFileSync(join(OUTPUT_DIR, "content", ch.file.replace(".md", ".xhtml")), xhtml, "utf-8");
   }
 
+  if (hasCover) {
+    writeFileSync(join(OUTPUT_DIR, "cover.svg"), readFileSync(COVER_FILE, "utf-8"), "utf-8");
+    writeFileSync(join(OUTPUT_DIR, "cover.xhtml"), generateCoverXhtml(metadata), "utf-8");
+  }
+
   writeFileSync(join(OUTPUT_DIR, "nav.xhtml"), generateNavXhtml(metadata, chapters), "utf-8");
   writeFileSync(join(OUTPUT_DIR, "toc.ncx"), generateTocNcx(metadata, chapters), "utf-8");
-  writeFileSync(join(OUTPUT_DIR, "content.opf"), generateContentOpf(metadata, chapters, mermaidAssets), "utf-8");
+  writeFileSync(join(OUTPUT_DIR, "content.opf"), generateContentOpf(metadata, chapters, mermaidAssets, hasCover), "utf-8");
   writeFileSync(join(OUTPUT_DIR, "mimetype"), "application/epub+zip", "utf-8");
   writeFileSync(
     join(OUTPUT_DIR, "META-INF", "container.xml"),

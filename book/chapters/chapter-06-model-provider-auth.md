@@ -114,3 +114,31 @@ async getApiKeyForProvider(provider: string): Promise<string | undefined> {
 - 能在每次请求前解析 API key。
 - 能描述 extension provider 如何注册和卸载。
 - 能把缺模型、缺凭证、请求失败分成不同错误。
+
+## 6.10 本章实现关卡
+
+本章让 mini Pi 能用统一 registry 选择 faux model，并为真实 provider 预留鉴权边界。
+
+新增文件：
+
+- `src/provider/model-registry.ts`：保存模型元数据。
+- `src/provider/auth.ts`：按 provider 读取 API key 或返回缺凭证诊断。
+- `src/provider/models.json`：示例 custom model 配置。
+
+最小配置样例：
+
+```json
+{
+  "models": [
+    { "provider": "faux", "api": "faux", "id": "scripted", "displayName": "Faux Scripted" }
+  ]
+}
+```
+
+运行观察：
+
+```bash
+npm run mini -- --model faux/scripted -p "hello"
+```
+
+期望 registry 找到 `{ provider: "faux", api: "faux", id: "scripted" }`，stream adapter 由 `api` 决定。失败样例是用 provider name 直接选择 adapter，导致 OpenAI-compatible provider 无法复用。下一章会把 services、provider、session 汇合成 facade。

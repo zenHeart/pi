@@ -44,7 +44,22 @@ async function buildEpub(outputPath = EPUB_OUTPUT) {
   const navXhtml = readFileSync(join(OUTPUT_DIR, 'nav.xhtml'), 'utf-8');
   zip.file('nav.xhtml', navXhtml);
 
-  // 6. 添加所有章节内容
+  // 6. 添加封面资源
+  const rootAssets = ['cover.xhtml', 'cover.svg'];
+  const addedRootAssets = [];
+  for (const file of rootAssets) {
+    const target = join(OUTPUT_DIR, file);
+    if (existsSync(target)) {
+      const content = readFileSync(target);
+      zip.file(file, content);
+      addedRootAssets.push(file);
+    }
+  }
+  if (addedRootAssets.length > 0) {
+    console.log(`   Added ${addedRootAssets.length} root asset files`);
+  }
+
+  // 7. 添加所有章节内容
   const contentDir = join(OUTPUT_DIR, 'content');
   if (existsSync(contentDir)) {
     const files = readdirSync(contentDir);
@@ -65,7 +80,7 @@ async function buildEpub(outputPath = EPUB_OUTPUT) {
     console.log(`   Added ${files.length} mermaid files`);
   }
 
-  // 7. 生成 EPUB
+  // 8. 生成 EPUB
   const zipContent = await zip.generateAsync({
     type: 'nodebuffer',
     compression: 'DEFLATE',

@@ -120,3 +120,35 @@ export interface ResourceLoader {
 - 能实现一个不会污染其他 cwd 的服务工厂。
 - 能把 AGENTS 文件内容注入后续 system prompt。
 - 能在资源冲突时返回 diagnostics，而不是静默覆盖。
+
+## 3.10 本章实现关卡
+
+本章把 runtime 从“空对象”升级为 cwd 绑定服务集合。
+
+新增文件：
+
+- `src/runtime/create-services.ts`：创建 settings、auth、model registry、resource loader。
+- `src/runtime/settings.ts`：读取全局配置和项目配置。
+- `src/runtime/resources.ts`：加载项目规则和 prompt 资源。
+- `src/runtime/diagnostics.ts`：保存非致命配置问题。
+
+最小服务契约：
+
+```ts
+export interface RuntimeServices {
+  cwd: string;
+  settings: SettingsStore;
+  auth: AuthStore;
+  models: ModelRegistry;
+  resources: ResourceLoader;
+  diagnostics: Diagnostic[];
+}
+```
+
+运行观察：
+
+```bash
+npm run mini -- --debug-services -p "hello"
+```
+
+期望输出包括 `cwd`、已加载资源数量、默认模型和 diagnostics。失败样例是从项目 A resume 到项目 B 后仍使用项目 A 的规则。下一章会让 session replacement 触发服务重建。

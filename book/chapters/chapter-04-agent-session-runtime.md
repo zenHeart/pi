@@ -123,3 +123,33 @@ this.apply(
 - 能保证 host 在替换后订阅新 session。
 - 能处理 extension 取消替换。
 - 能说明 stale extension context 的风险。
+
+## 4.10 本章实现关卡
+
+本章给 mini Pi 增加可替换 session runtime。
+
+新增文件：
+
+- `src/runtime/agent-session-runtime.ts`：持有当前 session、services 和 rebind 回调。
+- `src/session/session-store.ts`：创建或打开 JSONL session 文件。
+- `src/runtime/session-events.ts`：定义 `session_start`、`session_shutdown`、`session_replaced`。
+
+最小 runtime API：
+
+```ts
+export interface AgentSessionRuntime {
+  current(): AgentSessionFacade;
+  newSession(cwd: string): Promise<void>;
+  resumeSession(file: string): Promise<void>;
+  setRebindHost(callback: () => Promise<void>): void;
+}
+```
+
+运行观察：
+
+```bash
+npm run mini -- --session tmp/a.jsonl -p "first"
+npm run mini -- --session tmp/a.jsonl --resume -p "second"
+```
+
+期望第二次运行加载同一个 session，并且 host 订阅新 facade。失败样例是 `/resume` 后 prompt 仍写入旧文件。下一章会接入 faux provider stream。
