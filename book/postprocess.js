@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import hljs from "highlight.js/lib/index.js";
 import { Marked, Renderer } from "marked";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -20,6 +21,29 @@ const MERMAID_CONFIG_FILE = join(__dirname, "mermaid-config.json");
 const PUPPETEER_CONFIG_FILE = join(__dirname, "puppeteer-config.json");
 let mermaidCounter = 0;
 const mermaidAssets = [];
+const LANGUAGE_ALIASES = new Map([
+  ["js", "javascript"],
+  ["jsx", "javascript"],
+  ["jsonl", "json"],
+  ["md", "markdown"],
+  ["ps1", "powershell"],
+  ["sh", "bash"],
+  ["shell", "bash"],
+  ["ts", "typescript"],
+  ["tsx", "typescript"],
+  ["yml", "yaml"],
+  ["zsh", "bash"],
+]);
+const LANGUAGE_LABELS = new Map([
+  ["bash", "Bash"],
+  ["javascript", "JavaScript"],
+  ["json", "JSON"],
+  ["markdown", "Markdown"],
+  ["powershell", "PowerShell"],
+  ["text", "Text"],
+  ["typescript", "TypeScript"],
+  ["yaml", "YAML"],
+]);
 
 function escapeHtml(value) {
   return value
@@ -27,6 +51,35 @@ function escapeHtml(value) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+function getFenceLanguage(lang) {
+  return (lang ?? "").trim().split(/\s+/)[0].toLowerCase();
+}
+
+function getHighlightLanguage(language) {
+  if (!language) {
+    return "";
+  }
+  const normalized = LANGUAGE_ALIASES.get(language) ?? language;
+  return hljs.getLanguage(normalized) ? normalized : "";
+}
+
+function getLanguageLabel(language, highlightLanguage) {
+  const normalized = highlightLanguage || LANGUAGE_ALIASES.get(language) || language;
+  return LANGUAGE_LABELS.get(normalized) ?? normalized.toUpperCase();
+}
+
+function highlightCode(code, language) {
+  const highlightLanguage = getHighlightLanguage(language);
+  if (!highlightLanguage) {
+    return escapeHtml(code);
+  }
+  try {
+    return hljs.highlight(code, { language: highlightLanguage, ignoreIllegals: true }).value;
+  } catch {
+    return escapeHtml(code);
+  }
 }
 
 function readMetadata() {
@@ -167,13 +220,16 @@ function createMarkdownRenderer(metadata) {
   const renderer = new Renderer();
 
   renderer.code = ({ text, lang }) => {
-    const language = (lang ?? "").trim();
+    const language = getFenceLanguage(lang);
     if (language === "mermaid") {
       const asset = writeMermaidSvg(text);
       return `<figure class="diagram-page"><img src="../mermaid/${asset}" alt="Mermaid diagram ${mermaidCounter}"/></figure>`;
     }
-    const className = language ? ` class="language-${escapeHtml(language)}"` : "";
-    return `<pre><code${className}>${escapeHtml(`${text.replace(/\n$/, "")}\n`)}</code></pre>`;
+    const code = `${text.replace(/\n$/, "")}\n`;
+    const highlightLanguage = getHighlightLanguage(language);
+    const className = language ? ` class="language-${escapeHtml(language)} hljs"` : ' class="hljs"';
+    const languageLabel = language ? ` data-language="${escapeHtml(getLanguageLabel(language, highlightLanguage))}"` : "";
+    return `<pre class="code-block"${languageLabel}><code${className}>${highlightCode(code, language)}</code></pre>`;
   };
 
   renderer.link = function renderLink({ href, title, tokens }) {
@@ -361,16 +417,86 @@ function postprocess() {
 <head>
   <title>${escapeHtml(ch.title)}</title>
   <style>
-    body { font-family: 'Noto Sans SC', sans-serif; line-height: 1.8; margin: 1em; overflow-wrap: anywhere; }
-    h1, h2, h3, h4 { color: #333; overflow-wrap: anywhere; word-break: break-word; }
+    :root {
+      color-scheme: light dark;
+      --page-bg: #ffffff;
+      --page-fg: #24292f;
+      --muted-fg: #57606a;
+      --border: #d0d7de;
+      --table-head-bg: #f6f8fa;
+      --inline-code-bg: rgba(175, 184, 193, 0.2);
+      --code-bg: #f6f8fa;
+      --code-fg: #24292f;
+      --syntax-comment: #6e7781;
+      --syntax-keyword: #cf222e;
+      --syntax-type: #8250df;
+      --syntax-function: #8250df;
+      --syntax-string: #0a3069;
+      --syntax-number: #0550ae;
+      --syntax-variable: #953800;
+      --syntax-punctuation: #24292f;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --page-bg: #0d1117;
+        --page-fg: #c9d1d9;
+        --muted-fg: #8b949e;
+        --border: #30363d;
+        --table-head-bg: #161b22;
+        --inline-code-bg: rgba(110, 118, 129, 0.4);
+        --code-bg: #161b22;
+        --code-fg: #c9d1d9;
+        --syntax-comment: #8b949e;
+        --syntax-keyword: #ff7b72;
+        --syntax-type: #d2a8ff;
+        --syntax-function: #d2a8ff;
+        --syntax-string: #a5d6ff;
+        --syntax-number: #79c0ff;
+        --syntax-variable: #ffa657;
+        --syntax-punctuation: #c9d1d9;
+      }
+    }
+    @media print {
+      :root {
+        --page-bg: #ffffff;
+        --page-fg: #24292f;
+        --muted-fg: #57606a;
+        --border: #d0d7de;
+        --table-head-bg: #f6f8fa;
+        --inline-code-bg: rgba(175, 184, 193, 0.2);
+        --code-bg: #f6f8fa;
+        --code-fg: #24292f;
+        --syntax-comment: #6e7781;
+        --syntax-keyword: #cf222e;
+        --syntax-type: #8250df;
+        --syntax-function: #8250df;
+        --syntax-string: #0a3069;
+        --syntax-number: #0550ae;
+        --syntax-variable: #953800;
+        --syntax-punctuation: #24292f;
+      }
+    }
+    body { background: var(--page-bg); color: var(--page-fg); font-family: 'Noto Sans SC', sans-serif; line-height: 1.8; margin: 1em; overflow-wrap: anywhere; }
+    h1, h2, h3, h4 { color: var(--page-fg); overflow-wrap: anywhere; word-break: break-word; }
     a { overflow-wrap: anywhere; }
-    code { background: #f4f4f4; padding: 0.2em 0.4em; border-radius: 3px; }
-    pre { background: #f4f4f4; padding: 1em; overflow-x: auto; border-radius: 5px; }
+    code { background: var(--inline-code-bg); padding: 0.2em 0.4em; border-radius: 6px; }
+    pre.code-block { background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px; color: var(--code-fg); font-size: 0.86em; line-height: 1.55; margin: 1.2em 0; overflow-x: auto; padding: 1em; tab-size: 2; white-space: pre-wrap; }
     pre code { background: none; padding: 0; }
+    pre.code-block code { color: inherit; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace; white-space: pre-wrap; }
+    .hljs-comment, .hljs-quote { color: var(--syntax-comment); }
+    .hljs-keyword, .hljs-selector-tag, .hljs-subst { color: var(--syntax-keyword); }
+    .hljs-type, .hljs-class .hljs-title, .hljs-title.class_ { color: var(--syntax-type); }
+    .hljs-title, .hljs-title.function_, .hljs-section, .hljs-selector-id { color: var(--syntax-function); font-weight: 600; }
+    .hljs-string, .hljs-doctag, .hljs-regexp, .hljs-link { color: var(--syntax-string); }
+    .hljs-number, .hljs-literal { color: var(--syntax-number); }
+    .hljs-attr, .hljs-attribute, .hljs-property, .hljs-variable, .hljs-template-variable, .hljs-built_in, .hljs-builtin-name { color: var(--syntax-variable); }
+    .hljs-punctuation, .hljs-operator, .hljs-params { color: var(--syntax-punctuation); }
+    .hljs-deletion { background: #ffeef0; color: #b31d28; }
+    .hljs-addition { background: #f0fff4; color: #22863a; }
     table { border-collapse: collapse; table-layout: fixed; width: 100%; margin: 1em 0; }
-    th, td { border: 1px solid #ddd; padding: 0.5em; text-align: left; overflow-wrap: anywhere; }
-    th { background: #f4f4f4; }
-    blockquote { border-left: 3px solid #ddd; margin: 1em 0; padding-left: 1em; color: #666; }
+    th, td { border: 1px solid var(--border); padding: 0.5em; text-align: left; overflow-wrap: anywhere; }
+    th { background: var(--table-head-bg); }
+    blockquote { border-left: 3px solid var(--border); margin: 1em 0; padding-left: 1em; color: var(--muted-fg); }
     figure.diagram-page { margin: 1.5em 0; page-break-inside: avoid; }
     figure.diagram-page img { display: block; width: 100%; height: auto; }
   </style>
