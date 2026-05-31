@@ -1,29 +1,42 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 560" width="400" height="560" role="img" aria-labelledby="title desc">
   <title id="title">Pi Agent 复刻指南</title>
-  <desc id="desc">从源码边界到可运行 Coding Agent 的复刻指南封面，以圆形结构表达 agent 的循环、上下文与工具协作。</desc>
+  <desc id="desc">25 章完整产品复刻版封面，强调源码边界、协议、测试和可复刻的 Agent 产品结构。</desc>
   <defs>
-    <linearGradient id="paper" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#fbf7f0"/>
-      <stop offset="1" stop-color="#ece3d7"/>
+    <linearGradient id="paper" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fbfaf6"/>
+      <stop offset="1" stop-color="#e9f2ef"/>
     </linearGradient>
+    <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse">
+      <path d="M 24 0 L 0 0 0 24" fill="none" stroke="#d8dfdc" stroke-width="1"/>
+    </pattern>
   </defs>
 
   <rect width="400" height="560" fill="url(#paper)"/>
-
-  <circle cx="382" cy="184" r="132" fill="#0f766e" opacity="0.13"/>
+  <rect width="400" height="560" fill="url(#grid)" opacity="0.36"/>
+  <rect x="28" y="28" width="344" height="504" rx="0" fill="none" stroke="#16202a" stroke-width="2"/>
 
   <g font-family="ui-sans-serif, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">
-    <text x="50" y="78" font-size="10" font-weight="800" letter-spacing="2.2" fill="#6a7280">ZENHEART / PI</text>
+    <text x="52" y="72" font-size="10" font-weight="800" fill="#56616d">ZENHEART / PI BOOK</text>
 
-    <text x="50" y="188" font-size="62" font-weight="900" fill="#17191f">Pi</text>
-    <text x="50" y="256" font-size="62" font-weight="900" fill="#17191f">Agent</text>
+    <text x="50" y="152" font-size="60" font-weight="900" fill="#151b23">Pi</text>
+    <text x="50" y="218" font-size="60" font-weight="900" fill="#151b23">Agent</text>
+    <text x="52" y="266" font-size="30" font-weight="900" fill="#c24132">源码复刻指南</text>
 
-    <text x="52" y="328" font-size="34" font-weight="900" fill="#d65b43">复刻指南</text>
+    <g transform="translate(52 308)">
+      <path d="M 44 42 H 122 M 122 42 L 190 16 M 122 42 L 190 68" fill="none" stroke="#0f766e" stroke-width="3" stroke-linecap="round"/>
+      <rect x="0" y="18" width="88" height="48" rx="6" fill="#ffffff" stroke="#16202a" stroke-width="2"/>
+      <rect x="148" y="-6" width="118" height="44" rx="6" fill="#ffffff" stroke="#16202a" stroke-width="2"/>
+      <rect x="148" y="52" width="118" height="44" rx="6" fill="#ffffff" stroke="#16202a" stroke-width="2"/>
+      <circle cx="122" cy="42" r="9" fill="#0f766e"/>
+      <text x="18" y="47" font-size="13" font-weight="800" fill="#151b23">Runtime</text>
+      <text x="171" y="22" font-size="13" font-weight="800" fill="#151b23">Tools</text>
+      <text x="166" y="80" font-size="13" font-weight="800" fill="#151b23">Session</text>
+    </g>
 
-    <text x="52" y="388" font-size="16" font-weight="800" fill="#0f766e">从源码边界到可运行 Agent</text>
-    <text x="52" y="418" font-size="12" fill="#606873">理解核心概念、使用方式与设计边界</text>
+    <text x="52" y="448" font-size="16" font-weight="800" fill="#0f766e">从源码边界到可运行 Coding Agent</text>
+    <text x="52" y="478" font-size="12" fill="#59636e">核心概念 · 使用方式 · 运行原理 · 设计复刻</text>
 
-    <text x="52" y="502" font-size="12" font-weight="800" fill="#17191f">16 章 · 复刻路线版</text>
-    <text x="52" y="524" font-size="10" font-weight="700" fill="#6a7280">基于 zenHeart/pi fork</text>
+    <text x="52" y="506" font-size="12" font-weight="800" fill="#151b23">25 章 · 完整产品复刻版</text>
+    <text x="52" y="524" font-size="10" font-weight="700" fill="#59636e">基于仓库源码、docs 与书籍生成脚本</text>
   </g>
 </svg>
