@@ -33,5 +33,5 @@ chapters:
       - chapter-16-safety-diagnostics-production.md
 
 pi_repo: "https://github.com/zenHeart/pi"
-source_ref: "codex/pi-book-rewrite"
+source_ref: "book"
 source_base: "../"
