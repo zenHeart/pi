@@ -273,11 +273,11 @@ function generateNavXhtml(metadata, chapters) {
 <head>
   <title>目录</title>
   <style>
-    body { font-family: sans-serif; margin: 1em; }
-    h1 { font-size: 1.5em; }
+    body { font-family: sans-serif; margin: 1em; overflow-wrap: anywhere; }
+    h1 { font-size: 1.5em; overflow-wrap: anywhere; word-break: break-word; }
     ul { list-style-type: none; padding-left: 1em; }
     li { margin: 0.5em 0; }
-    a { text-decoration: none; color: #333; }
+    a { text-decoration: none; color: #333; overflow-wrap: anywhere; }
   </style>
 </head>
 <body>
@@ -322,13 +322,14 @@ function postprocess() {
 <head>
   <title>${escapeHtml(ch.title)}</title>
   <style>
-    body { font-family: 'Noto Sans SC', sans-serif; line-height: 1.8; margin: 1em; }
-    h1, h2, h3, h4 { color: #333; }
+    body { font-family: 'Noto Sans SC', sans-serif; line-height: 1.8; margin: 1em; overflow-wrap: anywhere; }
+    h1, h2, h3, h4 { color: #333; overflow-wrap: anywhere; word-break: break-word; }
+    a { overflow-wrap: anywhere; }
     code { background: #f4f4f4; padding: 0.2em 0.4em; border-radius: 3px; }
     pre { background: #f4f4f4; padding: 1em; overflow-x: auto; border-radius: 5px; }
     pre code { background: none; padding: 0; }
-    table { border-collapse: collapse; width: 100%; margin: 1em 0; }
-    th, td { border: 1px solid #ddd; padding: 0.5em; text-align: left; }
+    table { border-collapse: collapse; table-layout: fixed; width: 100%; margin: 1em 0; }
+    th, td { border: 1px solid #ddd; padding: 0.5em; text-align: left; overflow-wrap: anywhere; }
     th { background: #f4f4f4; }
     blockquote { border-left: 3px solid #ddd; margin: 1em 0; padding-left: 1em; color: #666; }
     figure.diagram-page { margin: 1.5em 0; page-break-inside: avoid; }
