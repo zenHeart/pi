@@ -30,10 +30,38 @@ See these complete provider examples:
 
 ## Quick Reference
 
+Extensions can register either a complete pi-ai `Provider` or use the legacy provider-config form. Prefer a complete provider when custom authentication, filtering, refresh, or streaming behavior is required. Pi composes `models.json` overrides above registered native providers.
+
 ```typescript
+import { createProvider, openAICompletionsApi } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 export default function (pi: ExtensionAPI) {
+  pi.registerProvider(createProvider({
+    id: "native-local",
+    name: "Native Local",
+    baseUrl: "http://localhost:8080/v1",
+    auth: {
+      apiKey: {
+        name: "Local server API key",
+        async login(interaction) {
+          return {
+            type: "api_key",
+            key: await interaction.prompt({ type: "secret", message: "API key" })
+          };
+        },
+        async resolve({ credential }) {
+          return credential?.key
+            ? { auth: { apiKey: credential.key }, source: "stored API key" }
+            : undefined;
+        }
+      }
+    },
+    models: [],
+    api: openAICompletionsApi()
+  }));
+
+  // Legacy provider-config form:
   // Override baseUrl for existing provider
   pi.registerProvider("anthropic", {
     baseUrl: "https://proxy.example.com"
@@ -43,7 +71,7 @@ export default function (pi: ExtensionAPI) {
   pi.registerProvider("my-provider", {
     name: "My Provider",
     baseUrl: "https://api.example.com",
-    apiKey: "MY_API_KEY",
+    apiKey: "$MY_API_KEY",
     api: "openai-completions",
     models: [
       {
@@ -83,7 +111,7 @@ pi.registerProvider("openai", {
 pi.registerProvider("google", {
   baseUrl: "https://ai-gateway.corp.com/google",
   headers: {
-    "X-Corp-Auth": "CORP_AUTH_TOKEN"  // env var or literal
+    "X-Corp-Auth": "$CORP_AUTH_TOKEN"  // env var or literal
   }
 });
 ```
@@ -112,7 +140,7 @@ export default async function (pi: ExtensionAPI) {
 
   pi.registerProvider("local-openai", {
     baseUrl: "http://localhost:1234/v1",
-    apiKey: "LOCAL_OPENAI_API_KEY",
+    apiKey: "$LOCAL_OPENAI_API_KEY",
     api: "openai-completions",
     models: payload.data.map((model) => ({
       id: model.id,
@@ -132,7 +160,7 @@ This registers the fetched models before startup finishes.
 ```typescript
 pi.registerProvider("my-llm", {
   baseUrl: "https://api.my-llm.com/v1",
-  apiKey: "MY_LLM_API_KEY",  // env var name or literal value
+  apiKey: "$MY_LLM_API_KEY",  // env var reference
   api: "openai-completions",  // which streaming API to use
   models: [
     {
@@ -155,6 +183,8 @@ pi.registerProvider("my-llm", {
 
 When `models` is provided, it **replaces** all existing models for that provider.
 
+`apiKey` and custom header values use the same config value syntax as `models.json`: `!command` at the start executes a command for the whole value, `$ENV_VAR` and `${ENV_VAR}` interpolate environment variables, `$$` emits a literal `$`, and `$!` emits a literal `!`.
+
 ## Unregister Provider
 
 Use `pi.unregisterProvider(name)` to remove a provider that was previously registered via `pi.registerProvider(name, ...)`:
@@ -163,7 +193,7 @@ Use `pi.unregisterProvider(name)` to remove a provider that was previously regis
 // Register
 pi.registerProvider("my-llm", {
   baseUrl: "https://api.my-llm.com/v1",
-  apiKey: "MY_LLM_API_KEY",
+  apiKey: "$MY_LLM_API_KEY",
   api: "openai-completions",
   models: [
     {
@@ -197,12 +227,12 @@ The `api` field determines which streaming implementation is used:
 | `openai-responses` | OpenAI Responses API |
 | `azure-openai-responses` | Azure OpenAI Responses API |
 | `openai-codex-responses` | OpenAI Codex Responses API |
-| `mistral-conversations` | Mistral SDK Conversations/Chat streaming |
+| `mistral-conversations` | Native Mistral Chat Completions streaming |
 | `google-generative-ai` | Google Generative AI API |
 | `google-vertex` | Google Vertex AI API |
 | `bedrock-converse-stream` | Amazon Bedrock Converse API |
 
-Most OpenAI-compatible providers work with `openai-completions`. Use model-level `thinkingLevelMap` for model-specific thinking levels, and `compat` for provider quirks:
+Most OpenAI-compatible providers work with `openai-completions`. Use model-level `thinkingLevelMap` for model-specific thinking levels, and `compat` for provider quirks. The `xhigh` and `max` levels are opt-in, require non-null map entries, and may be separated by unsupported holes:
 
 ```typescript
 models: [{
@@ -214,7 +244,8 @@ models: [{
     low: null,
     medium: null,
     high: "default",
-    xhigh: "max"
+    xhigh: null,
+    max: "max"
   },
   compat: {
     supportsDeveloperRole: false,   // use "system" instead of "developer"
@@ -227,10 +258,10 @@ models: [{
 }]
 ```
 
-Use `openrouter` for OpenRouter-style `reasoning: { effort }` controls. Use `together` for Together-style `reasoning: { enabled }` controls; with `supportsReasoningEffort`, it also sends `reasoning_effort`. Use `qwen-chat-template` instead for local Qwen-compatible servers that read `chat_template_kwargs.enable_thinking`.
-Use `cacheControlFormat: "anthropic"` for OpenAI-compatible providers that expose Anthropic-style prompt caching via `cache_control` on the system prompt, last tool definition, and last user/assistant text content.
+Use `openrouter` for OpenRouter-style `reasoning: { effort }` controls. Use `together` for Together-style `reasoning: { enabled }` controls; with `supportsReasoningEffort`, it also sends `reasoning_effort`. Use `qwen-chat-template` for local Qwen-compatible servers that read `chat_template_kwargs.enable_thinking` and need `preserve_thinking`.
+Use `cacheControlFormat: "anthropic"` for OpenAI-compatible providers that expose Anthropic-style prompt caching via `cache_control` on the system prompt, last tool definition, and last user, assistant, or tool-result text content.
 
-For Anthropic-compatible providers using `api: "anthropic-messages"`, set `compat.forceAdaptiveThinking: true` on models or providers whose upstream model requires adaptive thinking (`thinking.type: "adaptive"` plus `output_config.effort`). Built-in adaptive Claude models set this automatically.
+For Anthropic-compatible providers using `api: "anthropic-messages"`, set `compat.forceAdaptiveThinking: true` on models or providers whose upstream model requires adaptive thinking (`thinking.type: "adaptive"` plus `output_config.effort`). Built-in adaptive Claude models set this automatically. Set `compat.allowEmptySignature: true` only for providers that emit empty thinking signatures and expect `signature: ""` on replay.
 
 > Migration note: Mistral moved from `openai-completions` to `mistral-conversations`.
 > Use `mistral-conversations` for native Mistral models.
@@ -243,12 +274,14 @@ If your provider expects `Authorization: Bearer <key>` but doesn't use a standar
 ```typescript
 pi.registerProvider("custom-api", {
   baseUrl: "https://api.example.com",
-  apiKey: "MY_API_KEY",
+  apiKey: "$MY_API_KEY",
   authHeader: true,  // adds Authorization: Bearer header
   api: "openai-completions",
   models: [...]
 });
 ```
+
+The key is resolved for each request. An explicit request `Authorization` header takes precedence over the generated value.
 
 ## OAuth Support
 
@@ -298,8 +331,8 @@ pi.registerProvider("corporate-ai", {
       };
     },
 
-    async refreshToken(credentials: OAuthCredentials): Promise<OAuthCredentials> {
-      const tokens = await refreshAccessToken(credentials.refresh);
+    async refreshToken(credentials: OAuthCredentials, signal: AbortSignal): Promise<OAuthCredentials> {
+      const tokens = await refreshAccessToken(credentials.refresh, signal);
       return {
         refresh: tokens.refreshToken ?? credentials.refresh,
         access: tokens.accessToken,
@@ -309,15 +342,6 @@ pi.registerProvider("corporate-ai", {
 
     getApiKey(credentials: OAuthCredentials): string {
       return credentials.access;
-    },
-
-    // Optional: modify models based on user's subscription
-    modifyModels(models, credentials) {
-      const region = decodeRegionFromToken(credentials.access);
-      return models.map(m => ({
-        ...m,
-        baseUrl: `https://${region}.ai.corp.com/v1`
-      }));
     }
   }
 });
@@ -327,7 +351,7 @@ After registration, users can authenticate via `/login corporate-ai`.
 
 ### OAuthLoginCallbacks
 
-The `callbacks` object provides three ways to authenticate:
+The `callbacks` object provides UI-neutral interactions for the provider-owned flow:
 
 ```typescript
 interface OAuthLoginCallbacks {
@@ -341,6 +365,9 @@ interface OAuthLoginCallbacks {
     intervalSeconds?: number;
     expiresInSeconds?: number;
   }): void;
+
+  // Show transient progress
+  onProgress?(message: string): void;
 
   // Prompt user for input (for manual token entry)
   onPrompt(params: { message: string }): Promise<string>;
@@ -415,7 +442,7 @@ function streamMyProvider(
         totalTokens: 0,
         cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
       },
-      stopReason: "stop",
+      stopReason: "pending",
       timestamp: Date.now(),
     };
 
@@ -424,12 +451,18 @@ function streamMyProvider(
       stream.push({ type: "start", partial: output });
 
       // Make API request and process response...
-      // Push content events as they arrive...
+      // Push content events as they arrive and set stopReason from the terminal event.
+      if (output.stopReason === "pending") {
+        throw new Error("Provider stream ended without a stop reason");
+      }
+      if (output.stopReason === "error" || output.stopReason === "aborted") {
+        throw new Error(output.errorMessage || "An unknown error occurred");
+      }
 
       // Push done event
       stream.push({
         type: "done",
-        reason: output.stopReason as "stop" | "length" | "toolUse",
+        reason: output.stopReason,
         message: output
       });
       stream.end();
@@ -592,7 +625,7 @@ Register your stream function:
 ```typescript
 pi.registerProvider("my-provider", {
   baseUrl: "https://api.example.com",
-  apiKey: "MY_API_KEY",
+  apiKey: "$MY_API_KEY",
   api: "my-custom-api",
   models: [...],
   streamSimple: streamMyProvider
@@ -629,7 +662,7 @@ interface ProviderConfig {
   /** API endpoint URL. Required when defining models. */
   baseUrl?: string;
 
-  /** API key or environment variable name. Required when defining models (unless oauth). */
+  /** API key literal, env interpolation ($ENV_VAR or ${ENV_VAR}), or !command. Required when defining models (unless oauth). */
   apiKey?: string;
 
   /** API type for streaming. Required at provider or model level when defining models. */
@@ -642,7 +675,7 @@ interface ProviderConfig {
     options?: SimpleStreamOptions
   ) => AssistantMessageEventStream;
 
-  /** Custom headers to include in requests. Values can be env var names. */
+  /** Custom headers to include in requests. Values use the same resolution syntax as apiKey. */
   headers?: Record<string, string>;
 
   /** If true, adds Authorization: Bearer header with the resolved API key. */
@@ -655,9 +688,8 @@ interface ProviderConfig {
   oauth?: {
     name: string;
     login(callbacks: OAuthLoginCallbacks): Promise<OAuthCredentials>;
-    refreshToken(credentials: OAuthCredentials): Promise<OAuthCredentials>;
+    refreshToken(credentials: OAuthCredentials, signal: AbortSignal): Promise<OAuthCredentials>;
     getApiKey(credentials: OAuthCredentials): string;
-    modifyModels?(models: Model<Api>[], credentials: OAuthCredentials): Model<Api>[];
   };
 }
 ```
@@ -682,7 +714,7 @@ interface ProviderModelConfig {
   reasoning: boolean;
 
   /** Maps pi thinking levels to provider/model-specific values; null marks a level unsupported. */
-  thinkingLevelMap?: Partial<Record<"off" | "minimal" | "low" | "medium" | "high" | "xhigh", string | null>>;
+  thinkingLevelMap?: Partial<Record<"off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", string | null>>;
 
   /** Supported input types. */
   input: ("text" | "image")[];
@@ -711,13 +743,22 @@ interface ProviderModelConfig {
     supportsDeveloperRole?: boolean;
     supportsReasoningEffort?: boolean;
     supportsUsageInStreaming?: boolean;
+    supportsFinishReason?: boolean;
+    supportsStrictMode?: boolean;
+    supportsOpenAIGrammarTools?: boolean; // openai-completions/openai-responses; false falls back to normal function tools
     maxTokensField?: "max_completion_tokens" | "max_tokens";
     requiresToolResultName?: boolean;
     requiresAssistantAfterToolResult?: boolean;
     requiresThinkingAsText?: boolean;
     requiresReasoningContentOnAssistantMessages?: boolean;
-    thinkingFormat?: "openai" | "openrouter" | "deepseek" | "together" | "zai" | "qwen" | "qwen-chat-template";
+    thinkingFormat?: "openai" | "openrouter" | "deepseek" | "together" | "baseten" | "zai" | "qwen" | "chat-template" | "qwen-chat-template" | "string-thinking" | "ant-ling";
+    chatTemplateKwargs?: Record<string, string | number | boolean | null | { "$var": "thinking.enabled" | "thinking.effort" | "thinking.budget"; omitWhenOff?: boolean }>;
+    chatTemplateArgs?: Record<string, string | number | boolean | null | { "$var": "thinking.enabled" | "thinking.effort" | "thinking.budget"; omitWhenOff?: boolean }>;
+    thinkingTokenBudgetField?: "thinking_token_budget" | "thinking_budget" | "thinking_budget_tokens";
+    supportsThinkingTokenBudget?: boolean;
     cacheControlFormat?: "anthropic";
+    sessionAffinityFormat?: "openai" | "openai-nosession" | "openrouter";
+    sendSessionAffinityHeaders?: boolean;
 
     // anthropic-messages
     supportsEagerToolInputStreaming?: boolean;
@@ -725,9 +766,12 @@ interface ProviderModelConfig {
     sendSessionAffinityHeaders?: boolean;
     supportsCacheControlOnTools?: boolean;
     forceAdaptiveThinking?: boolean;
+    allowEmptySignature?: boolean;
+    supportsStrictTools?: boolean;
   };
 }
 ```
 
-`openrouter` sends `reasoning: { effort }`. `deepseek` sends `thinking: { type: "enabled" | "disabled" }` and `reasoning_effort` when enabled. `together` sends `reasoning: { enabled }` and also `reasoning_effort` when `supportsReasoningEffort` is enabled. `qwen` is for DashScope-style top-level `enable_thinking`. Use `qwen-chat-template` for local Qwen-compatible servers that read `chat_template_kwargs.enable_thinking`.
-`cacheControlFormat: "anthropic"` applies Anthropic-style `cache_control` markers to the system prompt, last tool definition, and last user/assistant text content.
+`openrouter` sends `reasoning: { effort }`. `deepseek` sends `thinking: { type: "enabled" | "disabled" }` and `reasoning_effort` when enabled. `together` sends `reasoning: { enabled }` and also `reasoning_effort` when `supportsReasoningEffort` is enabled. `qwen` is for DashScope-style top-level `enable_thinking`. Use `qwen-chat-template` for local Qwen-compatible servers that read `chat_template_kwargs.enable_thinking` and need `preserve_thinking`. Use `chat-template` for configurable `chat_template_kwargs`, for example DeepSeek V3.x behind vLLM with `chatTemplateKwargs: { "thinking": { "$var": "thinking.enabled" } }`. Use `thinkingFormat: "baseten"` with `chatTemplateArgs` when the provider expects toggle values under `chat_template_args` and optionally supports top-level `reasoning_effort`.
+`thinkingTokenBudgetField` sends a clamped per-level thinking budget as a top-level request field (`thinking_token_budget` on vLLM, `thinking_budget` on Qwen/SGLang, `thinking_budget_tokens` on llama.cpp). `supportsThinkingTokenBudget: true` is an alias for the vLLM field name. Do not combine it with `reasoning_effort` on DashScope Qwen models.
+`cacheControlFormat: "anthropic"` applies Anthropic-style `cache_control` markers to the system prompt, last tool definition, and last user, assistant, or tool-result text content.
