@@ -24,7 +24,7 @@ pi --no-extensions
 |---|---|
 | services 工厂 | [agent-session-services.ts#L130](packages/coding-agent/src/core/agent-session-services.ts#L130) |
 | settings manager | [settings-manager.ts#L245](packages/coding-agent/src/core/settings-manager.ts#L245) |
-| model registry | [model-registry.ts#L335](packages/coding-agent/src/core/model-registry.ts#L335) |
+| model registry | [model-registry.ts#L32](packages/coding-agent/src/core/model-registry.ts#L32) |
 | auth storage | [auth-storage.ts#L24](packages/coding-agent/src/core/auth-storage.ts#L24) |
 | resource loader 接口 | [resource-loader.ts#L28](packages/coding-agent/src/core/resource-loader.ts#L28) |
 | system prompt builder | [system-prompt.ts#L28](packages/coding-agent/src/core/system-prompt.ts#L28) |

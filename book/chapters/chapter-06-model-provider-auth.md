@@ -22,12 +22,12 @@ pi --models sonnet:high,gpt-5.1-codex:medium
 
 | 责任 | 当前实现 |
 |---|---|
-| ModelRegistry 类 | [model-registry.ts#L335](packages/coding-agent/src/core/model-registry.ts#L335) |
-| built-in/custom 合并 | [model-registry.ts#L384](packages/coding-agent/src/core/model-registry.ts#L384) |
-| custom wins merge | [model-registry.ts#L445](packages/coding-agent/src/core/model-registry.ts#L445) |
-| provider auth status | [model-registry.ts#L730](packages/coding-agent/src/core/model-registry.ts#L730) |
-| getApiKeyForProvider | [model-registry.ts#L771](packages/coding-agent/src/core/model-registry.ts#L771) |
-| dynamic provider registration | [model-registry.ts#L796](packages/coding-agent/src/core/model-registry.ts#L796) |
+| ModelRegistry 类 | [model-registry.ts#L32](packages/coding-agent/src/core/model-registry.ts#L32) |
+| built-in/custom 合并 | [provider-composer.ts#L168](packages/coding-agent/src/core/provider-composer.ts#L168) |
+| custom wins merge | [provider-composer.ts#L198](packages/coding-agent/src/core/provider-composer.ts#L198) |
+| provider auth status | [model-registry.ts#L95](packages/coding-agent/src/core/model-registry.ts#L95) |
+| getApiKeyForProvider | [model-registry.ts#L119](packages/coding-agent/src/core/model-registry.ts#L119) |
+| dynamic provider registration | [model-registry.ts#L131](packages/coding-agent/src/core/model-registry.ts#L131) |
 | AuthStorage credential type | [auth-storage.ts#L24](packages/coding-agent/src/core/auth-storage.ts#L24) |
 | auth file permissions | [auth-storage.ts#L67](packages/coding-agent/src/core/auth-storage.ts#L67) |
 | 请求前解析 key | [agent-loop.ts#L300](packages/agent/src/agent-loop.ts#L300) |
@@ -48,37 +48,38 @@ flowchart TD
 
 ## 6.5 关键代码片段
 
-源码位置：[model-registry.ts#L384](packages/coding-agent/src/core/model-registry.ts#L384)。片段之后继续看自定义模型如何覆盖内置模型：[model-registry.ts#L445](packages/coding-agent/src/core/model-registry.ts#L445)。
+源码位置：[provider-composer.ts#L168](packages/coding-agent/src/core/provider-composer.ts#L168)。片段之后继续看自定义模型如何覆盖内置模型：[provider-composer.ts#L198](packages/coding-agent/src/core/provider-composer.ts#L198)。
 
 ```ts
-const {
-  models: customModels,
-  overrides,
-  modelOverrides,
-  error,
-} = this.modelsJsonPath ? this.loadCustomModels(this.modelsJsonPath) : emptyCustomModelsResult();
-
-const builtInModels = this.loadBuiltInModels(overrides, modelOverrides);
-let combined = this.mergeCustomModels(builtInModels, customModels);
-```
-
-解释：输入是内置模型表和用户配置文件；输出是运行时可选模型列表。`models.json` 既能新增模型，也能覆盖 provider/model 字段。复刻时先支持 built-in + custom merge，再加入 overrides。
-
-源码位置：[model-registry.ts#L771](packages/coding-agent/src/core/model-registry.ts#L771)。片段之后继续看请求层如何每次调用前解析 key：[agent-loop.ts#L300](packages/agent/src/agent-loop.ts#L300)。
-
-```ts
-async getApiKeyForProvider(provider: string): Promise<string | undefined> {
-  const apiKey = await this.authStorage.getApiKey(provider, { includeFallback: false });
-  if (apiKey !== undefined) {
-    return apiKey;
-  }
-
-  const providerApiKey = this.providerRequestConfigs.get(provider)?.apiKey;
-  return providerApiKey ? resolveConfigValueUncached(providerApiKey) : undefined;
+const models: Model<Api>[] = baseModels.map((model) => ({
+  ...model,
+  baseUrl: config.oauth === "radius" ? model.baseUrl : (config.baseUrl ?? model.baseUrl),
+  compat: mergeCompat(model.compat, config.compat),
+}));
+for (const definition of config.models ?? []) {
+  const existingIndex = models.findIndex((model) => model.id === definition.id);
+  const defaults = existingIndex >= 0 ? models[existingIndex] : models[0];
+  const model = modelFromJson(providerId, definition, config, defaults);
+  if (existingIndex >= 0) models[existingIndex] = model;
+  else models.push(model);
 }
 ```
 
-解释：输入是 provider id；输出是当前请求要用的 key。它先查 auth storage，再查 provider request config。这里不缓存 command-backed value，避免 token 过期。复刻时不要在启动时把 token 固化进 model；要在每次请求前解析。
+解释：`applyModelsJson` 的输入是内置模型表和 `models.json` 中的 provider 配置；输出是合并后的可选模型列表。`models.json` 既能新增模型（`models.push`），也能按同 id 覆盖内置模型（`models[existingIndex] = model`）。复刻时先支持 built-in + custom merge，再加入 modelOverrides 级别的字段级覆盖。
+
+源码位置：[model-registry.ts#L119](packages/coding-agent/src/core/model-registry.ts#L119)。片段之后继续看请求层如何每次调用前解析 key：[agent-loop.ts#L300](packages/agent/src/agent-loop.ts#L300)。
+
+```ts
+async getApiKeyForProvider(provider: string): Promise<string | undefined> {
+  try {
+    return (await this.runtime.getAuth(provider))?.auth.apiKey;
+  } catch {
+    return undefined;
+  }
+}
+```
+
+解释：输入是 provider id；输出是当前请求要用的 key。它委托给 `ModelRuntime.getAuth` 解析（内部先查凭证存储，再查 models.json 的 provider 配置），解析失败时返回 `undefined` 而不是抛出。复刻时不要在启动时把 token 固化进 model；要在每次请求前解析。
 
 ## 6.6 机制拆解
 
