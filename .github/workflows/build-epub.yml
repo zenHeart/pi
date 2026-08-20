@@ -34,6 +34,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Validate book structure and source links
+        run: node book/validate.js
+
       - name: Install system packages
         run: |
           sudo apt-get update
