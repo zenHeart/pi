@@ -309,7 +309,7 @@ function generateContentOpf(metadata, chapters, assets, hasCover) {
 ` : "";
   const spineItems = chapters.map((_ch, index) => `    <itemref idref="chapter${index + 1}"/>`).join("\n");
   const modifiedDate = metadata.date
-    ? `${metadata.date.replace(/-/g, "-")}T00:00:00Z`
+    ? `${metadata.date}T00:00:00Z`
     : new Date().toISOString();
   const versionMeta = metadata.version
     ? `    <meta property="book-version">${escapeHtml(metadata.version)}</meta>

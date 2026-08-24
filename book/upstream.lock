@@ -1,3 +1,17 @@
+# book/upstream.lock — snapshot sync record for pi-book v8.1.0
+#
+# This file records the upstream and base SHAs that the book build was
+# reconciled against, plus a build gate summary. It is **not** a content
+# lock of the generated EPUB artifact.
+#
+# An EPUB is a ZIP of freshly-rendered Mermaid SVGs and XHTML chapters, so
+# its byte content is non-deterministic across fresh builds (different SVG
+# host strings, different timestamps inside the archive, etc.). The artifact
+# SHA256 / exact byte size therefore **cannot** be a reproducible lock value.
+# When a single-build SHA is needed for audit, capture it from the build run
+# (CI artifact or local Issue note) and treat it as observational evidence,
+# not as a contract.
+
 upstream:
   repo: https://github.com/earendil-works/pi-mono.git
   ref: refs/heads/main
@@ -8,6 +22,7 @@ base:
   origin_repo: https://github.com/zenHeart/pi.git
   ref: refs/heads/book
   sha: 33dccd90cb7798f51d5b444377b29ed0de7c981a
+reconciliation_commit: a62ac3ae17e7af4c80661e2b4afa3e8fc6674976
 sync:
   version: 8.1.0
   date: 2026-08-25
@@ -38,7 +53,7 @@ audit_history:
       Codex orchestrator after user requested "run the task as advised
       and reflect Pi's latest content". Recorded as execution.blocked
       on zenHeart/workflow#110 and on zenHeart/pi#1.
-  - commit: <this-commit>
+  - commit: a62ac3ae17e7af4c80661e2b4afa3e8fc6674976
     status: completed
     fixes:
       "chapter-01-dependency-dag.md":
@@ -65,11 +80,16 @@ audit_history:
       "chapter-19-faux-provider-tests.md":
         - "jsonl-repo.ts#L75 -> jsonl/repo.ts#L122 (create)"
 verification:
-  - "node book/validate.js (enhanced): exit 0; 25 chapters; 454 total source refs scanned (not just first per file)"
+  # Reproducible gates only. The EPUB artifact itself is non-deterministic
+  # across fresh builds; do not lock its SHA256 or exact byte size here.
+  - "node book/validate.js: exit 0; 25 chapters; all source links resolve to existing paths with #Lx in range; missing/invalid line errors now embed #Lx in the message"
   - "node book/validate-render.js: exit 0; 55 generated files validated"
   - "node book/validate-render.test.js: exit 0; 25 mermaid SVG files; hljs TypeScript keyword spans; light + dark code-bg CSS variables present; data-language preserved non-visually"
-  - "node book/build-epub.mjs book/pi-agent-handbook.epub: exit 0; EPUB non-empty (258 KB / 263967 bytes); SHA256 9bf47d5271797c3946cea559ccaEA81B22126327EF80D82D731FDE676E1E28D7; 25 chapter entries in spine; metadata version=8.1.0, dc:date=2026-08-25, dcterms:modified=2026-08-25T00:00:00Z"
+  - "node book/build-epub.mjs book/pi-agent-handbook.epub: exit 0; EPUB non-empty; 25 chapter entries in spine; metadata version=8.1.0, dc:date=2026-08-25, dcterms:modified=2026-08-25T00:00:00Z"
+  # Per-run observational evidence for the artifact SHA / size belongs in
+  # the build's Issue note or CI artifact, not in this lock file.
 enhancements:
-  - "book/validate.js: sourceLinkScan now uses [...content.matchAll(...)] so every broken reference (not just the first per file) is reported; error message now embeds #Lx for direct identification."
-  - "book/postprocess.js: readMetadata() now parses version + date from metadata.yaml; generateContentOpf() emits dc:date + book-version + dcterms:modified so the EPUB carries 8.1.0 / 2026-08-25 in its OPF instead of the hardcoded 2026-05-25."
-  - ".gitignore: added book/epub-content/, book/*.epub, scripts-tmp/ to keep build artifacts and ad-hoc scan scripts out of the source tree."
+  - "book/validate.js: source-link scan iterates content.matchAll() directly (no spread-into-array); error messages embed #Lx so the broken line is identifiable without re-deriving line numbers by hand."
+  - "book/postprocess.js: readMetadata() parses version + date from metadata.yaml; generateContentOpf() emits dc:date + book-version + dcterms:modified so the EPUB carries 8.1.0 / 2026-08-25 in its OPF instead of a hardcoded date."
+  - "book/upstream.lock: replaces the unreproducible EPUB SHA256/size + self-referential commit placeholder with reconciliation_commit (audit-able pointer to the commit that produced this state) and a build-gate summary that does not claim byte-level reproducibility."
+  - ".gitignore: book/epub-content/, book/*.epub, scripts-tmp/ kept out of source tree."

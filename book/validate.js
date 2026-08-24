@@ -80,8 +80,7 @@ function validateSourceLinks(errors, file, content) {
     for (const link of wrapped) fail(errors, `${file} source link wrapped in backticks: ${link}`);
   }
 
-  const sourceLinks = [...content.matchAll(/\[[^\]]+\]\(((?:packages|scripts|book|\.github)\/[^)#]+)#L([0-9]+)\)/g)];
-  for (const match of sourceLinks) {
+  for (const match of content.matchAll(/\[[^\]]+\]\(((?:packages|scripts|book|\.github)\/[^)#]+)#L([0-9]+)\)/g)) {
     const sourcePath = join(REPO_ROOT, match[1]);
     const line = Number(match[2]);
     if (!existsSync(sourcePath)) {
