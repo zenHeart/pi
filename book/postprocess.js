@@ -88,6 +88,8 @@ function readMetadata() {
   const author = yaml.match(/^author:\s*"([^"]+)"/m)?.[1] ?? "Pi Agent Handbook";
   const lang =
     yaml.match(/^lang(?:uage)?:\s*([^\n]+)/m)?.[1]?.replace(/"/g, "").trim() ?? "zh-CN";
+  const version = yaml.match(/^version:\s*"([^"]+)"/m)?.[1] ?? "0.0.0";
+  const date = yaml.match(/^date:\s*"([^"]+)"/m)?.[1] ?? "";
   const piRepo = yaml.match(/^pi_repo:\s*"([^"]+)"/m)?.[1]?.replace(/\/$/, "") ?? "https://github.com/zenHeart/pi";
   const sourceRef = yaml.match(/^source_ref:\s*"([^"]+)"/m)?.[1] ?? "codex/pi-book-rewrite";
   const lines = yaml.split(/\r?\n/);
@@ -121,7 +123,7 @@ function readMetadata() {
     }
   }
 
-  return { title, author, lang, piRepo, sourceRef, chapters };
+  return { title, author, lang, version, date, piRepo, sourceRef, chapters };
 }
 
 function getChapterTitle(file) {
@@ -306,6 +308,17 @@ function generateContentOpf(metadata, chapters, assets, hasCover) {
   const coverSpineItem = hasCover ? `    <itemref idref="cover-page"/>
 ` : "";
   const spineItems = chapters.map((_ch, index) => `    <itemref idref="chapter${index + 1}"/>`).join("\n");
+  const modifiedDate = metadata.date
+    ? `${metadata.date.replace(/-/g, "-")}T00:00:00Z`
+    : new Date().toISOString();
+  const versionMeta = metadata.version
+    ? `    <meta property="book-version">${escapeHtml(metadata.version)}</meta>
+`
+    : "";
+  const dateMeta = metadata.date
+    ? `    <dc:date>${escapeHtml(metadata.date)}</dc:date>
+`
+    : "";
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookId" version="3.0">
@@ -314,7 +327,7 @@ function generateContentOpf(metadata, chapters, assets, hasCover) {
     <dc:title>${escapeHtml(metadata.title)}</dc:title>
     <dc:creator>${escapeHtml(metadata.author)}</dc:creator>
     <dc:language>${escapeHtml(metadata.lang)}</dc:language>
-${coverMeta}    <meta property="dcterms:modified">2026-05-25T00:00:00Z</meta>
+${coverMeta}${dateMeta}${versionMeta}    <meta property="dcterms:modified">${modifiedDate}</meta>
   </metadata>
   <manifest>
     <item id="ncx" media-type="application/x-dtbncx+xml" href="toc.ncx"/>

@@ -14,7 +14,7 @@
 |---|---|
 | 创建 session facade | [sdk.ts#L202](packages/coding-agent/src/core/sdk.ts#L202) |
 | Agent loop | [agent-loop.ts#L95](packages/agent/src/agent-loop.ts#L95) |
-| Provider stream 分发 | [stream.ts#L43](packages/ai/src/stream.ts#L43) |
+| Provider stream 分发 | [compat.ts#L275](packages/ai/src/compat.ts#L275) |
 | Assistant stream event | [types.ts#L347](packages/ai/src/types.ts#L347) |
 | Agent event union | [types.ts#L403](packages/agent/src/types.ts#L403) |
 | 工具 definition | [index.ts#L96](packages/coding-agent/src/core/tools/index.ts#L96) |

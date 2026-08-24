@@ -31,7 +31,7 @@ pi --session path/to/session.jsonl
 | import JSONL | [agent-session-runtime.ts#L340](packages/coding-agent/src/core/agent-session-runtime.ts#L340) |
 | runtime 创建 | [agent-session-runtime.ts#L393](packages/coding-agent/src/core/agent-session-runtime.ts#L393) |
 | session manager | [session-manager.ts#L711](packages/coding-agent/src/core/session-manager.ts#L711) |
-| JSONL fork | [jsonl-repo.ts#L133](packages/agent/src/harness/session/jsonl-repo.ts#L133) |
+| JSONL fork | [jsonl/repo.ts#L142](packages/agent/src/harness/session/jsonl/repo.ts#L142) |
 
 ## 4.4 生命周期图
 

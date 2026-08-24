@@ -31,8 +31,8 @@ pi --resume
 | branch walk | [session-manager.ts#L1076](packages/coding-agent/src/core/session-manager.ts#L1076) |
 | harness context builder | [session.ts#L22](packages/agent/src/harness/session/session.ts#L22) |
 | async append message | [session.ts#L128](packages/agent/src/harness/session/session.ts#L128) |
-| JsonlSessionRepo create | [jsonl-repo.ts#L75](packages/agent/src/harness/session/jsonl-repo.ts#L75) |
-| JsonlSessionRepo fork | [jsonl-repo.ts#L133](packages/agent/src/harness/session/jsonl-repo.ts#L133) |
+| JsonlSessionRepo create | [jsonl/repo.ts#L122](packages/agent/src/harness/session/jsonl/repo.ts#L122) |
+| JsonlSessionRepo fork | [jsonl/repo.ts#L142](packages/agent/src/harness/session/jsonl/repo.ts#L142) |
 
 ## 11.4 生命周期图
 
