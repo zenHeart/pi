@@ -1,0 +1,534 @@
+#!/usr/bin/env node
+/**
+ * Generate EPUB content from book/metadata.yaml and book/chapters.
+ */
+
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import hljs from "highlight.js/lib/index.js";
+import { Marked, Renderer } from "marked";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const CHAPTERS_DIR = join(__dirname, "chapters");
+const OUTPUT_DIR = join(__dirname, "epub-content");
+const MERMAID_DIR = join(OUTPUT_DIR, "mermaid");
+const METADATA_FILE = join(__dirname, "metadata.yaml");
+const COVER_FILE = join(__dirname, "cover", "cover.svg");
+const MERMAID_CONFIG_FILE = join(__dirname, "mermaid-config.json");
+const PUPPETEER_CONFIG_FILE = join(__dirname, "puppeteer-config.json");
+let mermaidCounter = 0;
+const mermaidAssets = [];
+const LANGUAGE_ALIASES = new Map([
+  ["js", "javascript"],
+  ["jsx", "javascript"],
+  ["jsonl", "json"],
+  ["md", "markdown"],
+  ["ps1", "powershell"],
+  ["sh", "bash"],
+  ["shell", "bash"],
+  ["ts", "typescript"],
+  ["tsx", "typescript"],
+  ["yml", "yaml"],
+  ["zsh", "bash"],
+]);
+const LANGUAGE_LABELS = new Map([
+  ["bash", "Bash"],
+  ["javascript", "JavaScript"],
+  ["json", "JSON"],
+  ["markdown", "Markdown"],
+  ["powershell", "PowerShell"],
+  ["text", "Text"],
+  ["typescript", "TypeScript"],
+  ["yaml", "YAML"],
+]);
+
+function escapeHtml(value) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function getFenceLanguage(lang) {
+  return (lang ?? "").trim().split(/\s+/)[0].toLowerCase();
+}
+
+function getHighlightLanguage(language) {
+  if (!language) {
+    return "";
+  }
+  const normalized = LANGUAGE_ALIASES.get(language) ?? language;
+  return hljs.getLanguage(normalized) ? normalized : "";
+}
+
+function getLanguageLabel(language, highlightLanguage) {
+  const normalized = highlightLanguage || LANGUAGE_ALIASES.get(language) || language;
+  return LANGUAGE_LABELS.get(normalized) ?? normalized.toUpperCase();
+}
+
+function highlightCode(code, language) {
+  const highlightLanguage = getHighlightLanguage(language);
+  if (!highlightLanguage) {
+    return escapeHtml(code);
+  }
+  try {
+    return hljs.highlight(code, { language: highlightLanguage, ignoreIllegals: true }).value;
+  } catch {
+    return escapeHtml(code);
+  }
+}
+
+function readMetadata() {
+  const yaml = readFileSync(METADATA_FILE, "utf-8");
+  const title = yaml.match(/^title:\s*"([^"]+)"/m)?.[1] ?? "Pi Agent Book";
+  const author = yaml.match(/^author:\s*"([^"]+)"/m)?.[1] ?? "Pi Agent Handbook";
+  const lang =
+    yaml.match(/^lang(?:uage)?:\s*([^\n]+)/m)?.[1]?.replace(/"/g, "").trim() ?? "zh-CN";
+  const piRepo = yaml.match(/^pi_repo:\s*"([^"]+)"/m)?.[1]?.replace(/\/$/, "") ?? "https://github.com/zenHeart/pi";
+  const sourceRef = yaml.match(/^source_ref:\s*"([^"]+)"/m)?.[1] ?? "codex/pi-book-rewrite";
+  const lines = yaml.split(/\r?\n/);
+  const chaptersBlock = [];
+  const chapters = [];
+  let currentPart = "";
+
+  let inChapters = false;
+  for (const line of lines) {
+    if (line === "chapters:") {
+      inChapters = true;
+      continue;
+    }
+    if (inChapters && /^[a-zA-Z_]+:/.test(line)) {
+      break;
+    }
+    if (inChapters) {
+      chaptersBlock.push(line);
+    }
+  }
+
+  for (const line of chaptersBlock) {
+    const part = line.match(/^\s+- part:\s*"([^"]+)"/);
+    if (part) {
+      currentPart = part[1];
+      continue;
+    }
+    const item = line.match(/^\s+- ([a-zA-Z0-9_.-]+\.md)\s*$/);
+    if (item) {
+      chapters.push({ file: item[1], part: currentPart });
+    }
+  }
+
+  return { title, author, lang, piRepo, sourceRef, chapters };
+}
+
+function getChapterTitle(file) {
+  const content = readFileSync(join(CHAPTERS_DIR, file), "utf-8");
+  return content.match(/^#\s+(.+)$/m)?.[1] ?? file.replace(/\.md$/, "");
+}
+
+function normalizeHref(href, metadata) {
+  const sourceMatch = href.match(/^((?:packages|scripts|book|\.github)\/.+)#L([0-9]+)$/);
+  if (sourceMatch) {
+    return `${metadata.piRepo}/blob/${metadata.sourceRef}/${sourceMatch[1]}#L${sourceMatch[2]}`;
+  }
+  return href;
+}
+
+function getMermaidCliPath() {
+  const localPath = join(__dirname, "..", "node_modules", "@mermaid-js", "mermaid-cli", "src", "cli.js");
+  if (existsSync(localPath)) {
+    return localPath;
+  }
+  throw new Error(
+    `Missing Mermaid CLI at ${localPath}. Run npm install --ignore-scripts before building the EPUB.`,
+  );
+}
+
+function getBrowserExecutablePath() {
+  if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+    return process.env.PUPPETEER_EXECUTABLE_PATH;
+  }
+
+  const candidates =
+    process.platform === "win32"
+      ? [
+          "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+          "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
+          "C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe",
+          "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
+        ]
+      : [
+          "/usr/bin/google-chrome-stable",
+          "/usr/bin/google-chrome",
+          "/usr/bin/chromium",
+          "/usr/bin/chromium-browser",
+        ];
+
+  return candidates.find((candidate) => existsSync(candidate));
+}
+
+function writeMermaidSvg(code) {
+  mermaidCounter += 1;
+  const name = `mermaid-${String(mermaidCounter).padStart(3, "0")}.svg`;
+  const inputDir = mkdtempSync(join(tmpdir(), "pi-book-mermaid-"));
+  const inputFile = join(inputDir, `${name}.mmd`);
+  const outputFile = join(MERMAID_DIR, name);
+  const browserExecutablePath = getBrowserExecutablePath();
+
+  writeFileSync(inputFile, code, "utf-8");
+  const result = spawnSync(
+    process.execPath,
+    [
+      getMermaidCliPath(),
+      "-i",
+      inputFile,
+      "-o",
+      outputFile,
+      "-c",
+      MERMAID_CONFIG_FILE,
+      "-p",
+      PUPPETEER_CONFIG_FILE,
+      "--quiet",
+    ],
+    {
+      encoding: "utf-8",
+      env: {
+        ...process.env,
+        PUPPETEER_DISABLE_HEADLESS_WARNING: "true",
+        ...(browserExecutablePath ? { PUPPETEER_EXECUTABLE_PATH: browserExecutablePath } : {}),
+      },
+    },
+  );
+  rmSync(inputDir, { recursive: true, force: true });
+
+  if (result.status !== 0 || !existsSync(outputFile)) {
+    const stderr = result.stderr?.trim() ?? "";
+    const stdout = result.stdout?.trim() ?? "";
+    throw new Error(
+      `Failed to render Mermaid diagram ${mermaidCounter}.${stderr ? `\n${stderr}` : ""}${stdout ? `\n${stdout}` : ""}`,
+    );
+  }
+
+  mermaidAssets.push(name);
+  return name;
+}
+
+function createMarkdownRenderer(metadata) {
+  const renderer = new Renderer();
+
+  renderer.code = ({ text, lang }) => {
+    const language = getFenceLanguage(lang);
+    if (language === "mermaid") {
+      const asset = writeMermaidSvg(text);
+      return `<figure class="diagram-page"><img src="../mermaid/${asset}" alt="Mermaid diagram ${mermaidCounter}"/></figure>`;
+    }
+    const code = `${text.replace(/\n$/, "")}\n`;
+    const highlightLanguage = getHighlightLanguage(language);
+    const className = language ? ` class="language-${escapeHtml(language)} hljs"` : ' class="hljs"';
+    const languageLabel = language ? ` data-language="${escapeHtml(getLanguageLabel(language, highlightLanguage))}"` : "";
+    return `<pre class="code-block"${languageLabel}><code${className}>${highlightCode(code, language)}</code></pre>`;
+  };
+
+  renderer.link = function renderLink({ href, title, tokens }) {
+    const text = this.parser.parseInline(tokens);
+    const normalizedHref = escapeHtml(normalizeHref(href, metadata));
+    const titleAttr = title ? ` title="${escapeHtml(title)}"` : "";
+    return `<a href="${normalizedHref}"${titleAttr}>${text}</a>`;
+  };
+
+  renderer.image = ({ href, title, text }) => {
+    const titleAttr = title ? ` title="${escapeHtml(title)}"` : "";
+    return `<img src="${escapeHtml(href)}" alt="${escapeHtml(text)}"${titleAttr}/>`;
+  };
+
+  renderer.hr = () => "<hr/>";
+  renderer.br = () => "<br/>";
+  renderer.html = ({ text }) => escapeHtml(text);
+
+  return renderer;
+}
+
+function markdownToHtml(md, metadata) {
+  const marked = new Marked({
+    async: false,
+    breaks: false,
+    gfm: true,
+    renderer: createMarkdownRenderer(metadata),
+  });
+  return marked.parse(md);
+}
+
+function generateTocNcx(metadata, chapters) {
+  const points = chapters
+    .map(
+      (ch, index) => `    <navPoint id="navpoint-${index + 1}" playOrder="${index + 1}">
+      <navLabel><text>${escapeHtml(ch.title)}</text></navLabel>
+      <content src="content/${ch.file.replace(".md", ".xhtml")}"/>
+    </navPoint>`,
+    )
+    .join("\n");
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
+  <head>
+    <meta name="dtb:uid" content="pi-agent-book"/>
+    <meta name="dtb:depth" content="2"/>
+    <meta name="dtb:totalPageCount" content="0"/>
+    <meta name="dtb:maxPageNumber" content="0"/>
+  </head>
+  <docTitle><text>${escapeHtml(metadata.title)}</text></docTitle>
+  <navMap>
+${points}
+  </navMap>
+</ncx>`;
+}
+
+function generateContentOpf(metadata, chapters, assets, hasCover) {
+  const coverMeta = hasCover ? `    <meta name="cover" content="cover-image"/>
+` : "";
+  const coverManifestItems = hasCover
+    ? `    <item id="cover-page" media-type="application/xhtml+xml" href="cover.xhtml"/>
+    <item id="cover-image" media-type="image/svg+xml" href="cover.svg" properties="cover-image"/>
+`
+    : "";
+  const manifestItems = chapters
+    .map(
+      (ch, index) =>
+        `    <item id="chapter${index + 1}" media-type="application/xhtml+xml" href="content/${ch.file.replace(".md", ".xhtml")}"/>`,
+    )
+    .join("\n");
+  const assetItems = assets
+    .map((asset, index) => `    <item id="mermaid${index + 1}" media-type="image/svg+xml" href="mermaid/${asset}"/>`)
+    .join("\n");
+  const coverSpineItem = hasCover ? `    <itemref idref="cover-page"/>
+` : "";
+  const spineItems = chapters.map((_ch, index) => `    <itemref idref="chapter${index + 1}"/>`).join("\n");
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookId" version="3.0">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:identifier id="BookId">pi-agent-book</dc:identifier>
+    <dc:title>${escapeHtml(metadata.title)}</dc:title>
+    <dc:creator>${escapeHtml(metadata.author)}</dc:creator>
+    <dc:language>${escapeHtml(metadata.lang)}</dc:language>
+${coverMeta}    <meta property="dcterms:modified">2026-05-25T00:00:00Z</meta>
+  </metadata>
+  <manifest>
+    <item id="ncx" media-type="application/x-dtbncx+xml" href="toc.ncx"/>
+    <item id="nav" media-type="application/xhtml+xml" href="nav.xhtml" properties="nav"/>
+${coverManifestItems}
+${manifestItems}
+${assetItems}
+  </manifest>
+  <spine toc="ncx">
+${coverSpineItem}
+${spineItems}
+  </spine>
+</package>`;
+}
+
+function generateCoverXhtml(metadata) {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <title>${escapeHtml(metadata.title)}封面</title>
+  <style>
+    body { margin: 0; background: #fbfaf6; }
+    .cover-page { min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+    img { display: block; width: 100%; max-width: 400px; height: auto; }
+  </style>
+</head>
+<body>
+  <section class="cover-page" aria-label="${escapeHtml(metadata.title)}封面">
+    <img src="cover.svg" alt="${escapeHtml(metadata.title)}封面"/>
+  </section>
+</body>
+</html>`;
+}
+
+function generateNavXhtml(metadata, chapters) {
+  const items = chapters
+    .map((ch) => `      <li><a href="content/${ch.file.replace(".md", ".xhtml")}">${escapeHtml(ch.title)}</a></li>`)
+    .join("\n");
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
+<head>
+  <title>目录</title>
+  <style>
+    body { font-family: sans-serif; margin: 1em; overflow-wrap: anywhere; }
+    h1 { font-size: 1.5em; overflow-wrap: anywhere; word-break: break-word; }
+    ul { list-style-type: none; padding-left: 1em; }
+    li { margin: 0.5em 0; }
+    a { text-decoration: none; color: #333; overflow-wrap: anywhere; }
+  </style>
+</head>
+<body>
+  <nav epub:type="toc" id="toc">
+    <h1>目录</h1>
+    <ul>
+${items}
+    </ul>
+  </nav>
+</body>
+</html>`;
+}
+
+function postprocess() {
+  const metadata = readMetadata();
+  const hasCover = existsSync(COVER_FILE);
+  const chapters = metadata.chapters.map((chapter) => ({
+    ...chapter,
+    title: getChapterTitle(chapter.file),
+  }));
+
+  mkdirSync(join(OUTPUT_DIR, "content"), { recursive: true });
+  mkdirSync(join(OUTPUT_DIR, "META-INF"), { recursive: true });
+  mkdirSync(MERMAID_DIR, { recursive: true });
+
+  for (const file of readdirSync(join(OUTPUT_DIR, "content"))) {
+    if (file.endsWith(".xhtml")) {
+      unlinkSync(join(OUTPUT_DIR, "content", file));
+    }
+  }
+  for (const file of readdirSync(MERMAID_DIR)) {
+    if (file.endsWith(".svg")) {
+      unlinkSync(join(MERMAID_DIR, file));
+    }
+  }
+  for (const file of ["cover.xhtml", "cover.svg"]) {
+    const target = join(OUTPUT_DIR, file);
+    if (existsSync(target)) {
+      unlinkSync(target);
+    }
+  }
+
+  for (const ch of chapters) {
+    const md = readFileSync(join(CHAPTERS_DIR, ch.file), "utf-8");
+    const html = markdownToHtml(md, metadata);
+    const xhtml = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <title>${escapeHtml(ch.title)}</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --page-bg: #ffffff;
+      --page-fg: #24292f;
+      --muted-fg: #57606a;
+      --border: #d0d7de;
+      --table-head-bg: #f6f8fa;
+      --inline-code-bg: rgba(175, 184, 193, 0.2);
+      --code-bg: #f6f8fa;
+      --code-fg: #24292f;
+      --syntax-comment: #6e7781;
+      --syntax-keyword: #cf222e;
+      --syntax-type: #8250df;
+      --syntax-function: #8250df;
+      --syntax-string: #0a3069;
+      --syntax-number: #0550ae;
+      --syntax-variable: #953800;
+      --syntax-punctuation: #24292f;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --page-bg: #0d1117;
+        --page-fg: #c9d1d9;
+        --muted-fg: #8b949e;
+        --border: #30363d;
+        --table-head-bg: #161b22;
+        --inline-code-bg: rgba(110, 118, 129, 0.4);
+        --code-bg: #161b22;
+        --code-fg: #c9d1d9;
+        --syntax-comment: #8b949e;
+        --syntax-keyword: #ff7b72;
+        --syntax-type: #d2a8ff;
+        --syntax-function: #d2a8ff;
+        --syntax-string: #a5d6ff;
+        --syntax-number: #79c0ff;
+        --syntax-variable: #ffa657;
+        --syntax-punctuation: #c9d1d9;
+      }
+    }
+    @media print {
+      :root {
+        --page-bg: #ffffff;
+        --page-fg: #24292f;
+        --muted-fg: #57606a;
+        --border: #d0d7de;
+        --table-head-bg: #f6f8fa;
+        --inline-code-bg: rgba(175, 184, 193, 0.2);
+        --code-bg: #f6f8fa;
+        --code-fg: #24292f;
+        --syntax-comment: #6e7781;
+        --syntax-keyword: #cf222e;
+        --syntax-type: #8250df;
+        --syntax-function: #8250df;
+        --syntax-string: #0a3069;
+        --syntax-number: #0550ae;
+        --syntax-variable: #953800;
+        --syntax-punctuation: #24292f;
+      }
+    }
+    body { background: var(--page-bg); color: var(--page-fg); font-family: 'Noto Sans SC', sans-serif; line-height: 1.8; margin: 1em; overflow-wrap: anywhere; }
+    h1, h2, h3, h4 { color: var(--page-fg); overflow-wrap: anywhere; word-break: break-word; }
+    a { overflow-wrap: anywhere; }
+    code { background: var(--inline-code-bg); padding: 0.2em 0.4em; border-radius: 6px; }
+    pre.code-block { background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px; color: var(--code-fg); font-size: 0.86em; line-height: 1.55; margin: 1.2em 0; overflow-x: auto; padding: 1em; tab-size: 2; white-space: pre-wrap; }
+    pre code { background: none; padding: 0; }
+    pre.code-block code { color: inherit; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace; white-space: pre-wrap; }
+    .hljs-comment, .hljs-quote { color: var(--syntax-comment); }
+    .hljs-keyword, .hljs-selector-tag, .hljs-subst { color: var(--syntax-keyword); }
+    .hljs-type, .hljs-class .hljs-title, .hljs-title.class_ { color: var(--syntax-type); }
+    .hljs-title, .hljs-title.function_, .hljs-section, .hljs-selector-id { color: var(--syntax-function); font-weight: 600; }
+    .hljs-string, .hljs-doctag, .hljs-regexp, .hljs-link { color: var(--syntax-string); }
+    .hljs-number, .hljs-literal { color: var(--syntax-number); }
+    .hljs-attr, .hljs-attribute, .hljs-property, .hljs-variable, .hljs-template-variable, .hljs-built_in, .hljs-builtin-name { color: var(--syntax-variable); }
+    .hljs-punctuation, .hljs-operator, .hljs-params { color: var(--syntax-punctuation); }
+    .hljs-deletion { background: #ffeef0; color: #b31d28; }
+    .hljs-addition { background: #f0fff4; color: #22863a; }
+    table { border-collapse: collapse; table-layout: fixed; width: 100%; margin: 1em 0; }
+    th, td { border: 1px solid var(--border); padding: 0.5em; text-align: left; overflow-wrap: anywhere; }
+    th { background: var(--table-head-bg); }
+    blockquote { border-left: 3px solid var(--border); margin: 1em 0; padding-left: 1em; color: var(--muted-fg); }
+    figure.diagram-page { margin: 1.5em 0; page-break-inside: avoid; }
+    figure.diagram-page img { display: block; width: 100%; height: auto; }
+  </style>
+</head>
+<body>
+${html}
+</body>
+</html>`;
+    writeFileSync(join(OUTPUT_DIR, "content", ch.file.replace(".md", ".xhtml")), xhtml, "utf-8");
+  }
+
+  if (hasCover) {
+    writeFileSync(join(OUTPUT_DIR, "cover.svg"), readFileSync(COVER_FILE, "utf-8"), "utf-8");
+    writeFileSync(join(OUTPUT_DIR, "cover.xhtml"), generateCoverXhtml(metadata), "utf-8");
+  }
+
+  writeFileSync(join(OUTPUT_DIR, "nav.xhtml"), generateNavXhtml(metadata, chapters), "utf-8");
+  writeFileSync(join(OUTPUT_DIR, "toc.ncx"), generateTocNcx(metadata, chapters), "utf-8");
+  writeFileSync(join(OUTPUT_DIR, "content.opf"), generateContentOpf(metadata, chapters, mermaidAssets, hasCover), "utf-8");
+  writeFileSync(join(OUTPUT_DIR, "mimetype"), "application/epub+zip", "utf-8");
+  writeFileSync(
+    join(OUTPUT_DIR, "META-INF", "container.xml"),
+    `<?xml version="1.0" encoding="UTF-8"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles>
+    <rootfile full-path="content.opf" media-type="application/oebps-package+xml"/>
+  </rootfiles>
+</container>`,
+    "utf-8",
+  );
+
+  console.log(`Generated ${chapters.length} chapters from metadata.yaml.`);
+}
+
+postprocess();

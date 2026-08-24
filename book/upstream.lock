@@ -1,0 +1,26 @@
+upstream:
+  repo: https://github.com/earendil-works/pi-mono.git
+  ref: refs/heads/main
+  sha: dcd461925db2edf69a43c8135db1180d418afd54
+  fetched_at: 2026-08-25T00:55:00+08:00
+  previous_sync_sha: 914cf1472
+base:
+  origin_repo: https://github.com/zenHeart/pi.git
+  ref: refs/heads/book
+  sha: 33dccd90cb7798f51d5b444377b29ed0de7c981a
+sync:
+  version: 8.1.0
+  date: 2026-08-25
+  status: blocked
+  reason: |
+    207 unique source references broken across all 25 chapters
+    (454 broken #Lx links). Upstream between v0.84.2 (914cf1472)
+    and current main (dcd461925) restructured key files
+    (e.g. removed packages/ai/src/stream.ts,
+    packages/ai/src/api-registry.ts,
+    packages/agent/src/harness/session/jsonl-repo.ts,
+    packages/coding-agent/src/core/session-manager.ts etc.)
+    while the book's prior sync claimed alignment to v0.84.2.
+    Mechanical rewrites are forbidden by task rule 9 when impact
+    cannot be safely judged. Local integration & verification
+    phase (AC-01..AC-04) cannot be claimed complete.

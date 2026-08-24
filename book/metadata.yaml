@@ -1,0 +1,50 @@
+title: "Pi Agent 复刻指南"
+subtitle: "从源码边界到可运行 Coding Agent"
+author: "ZenHeart"
+language: "zh-CN"
+date: "2026-08-25"
+version: "8.1.0"
+publisher: "ZenHeart"
+description: "一本面向完全不了解 Pi 的工程师的源码复刻教材，围绕 Pi 的源码边界、mini 实现、协议样例、测试回放和生产审计组织。"
+rights: "Copyright © 2026 ZenHeart"
+
+chapters:
+  - part: "第 1 部分：建立 Pi-like Agent 的依赖 DAG"
+    items:
+      - chapter-01-dependency-dag.md
+      - chapter-02-boot-runtime.md
+      - chapter-03-cwd-services.md
+      - chapter-04-agent-session-runtime.md
+  - part: "第 2 部分：实现模型、会话与 Agent 内核"
+    items:
+      - chapter-05-pi-ai-stream.md
+      - chapter-06-model-provider-auth.md
+      - chapter-07-create-agent-session.md
+      - chapter-08-agent-loop.md
+      - chapter-09-tools.md
+      - chapter-10-system-prompt-resources.md
+      - chapter-11-session-dag-jsonl.md
+      - chapter-12-compaction-retry-overflow.md
+  - part: "第 3 部分：扩展、宿主、安全与最终复刻"
+    items:
+      - chapter-13-extension-runtime.md
+      - chapter-14-host-adapters.md
+      - chapter-15-interactive-tui.md
+      - chapter-16-safety-diagnostics-production.md
+  - part: "第 4 部分：贯穿实现、协议、测试与审计"
+    items:
+      - chapter-17-mini-pi-implementation.md
+      - chapter-18-protocol-data-structures.md
+      - chapter-19-faux-provider-tests.md
+      - chapter-20-final-replication-audit.md
+  - part: "第 5 部分：完整产品复刻附录"
+    items:
+      - chapter-21-package-resources-themes.md
+      - chapter-22-rpc-extension-ui-html-export.md
+      - chapter-23-interactive-product-surface.md
+      - chapter-24-complete-replication-matrix.md
+      - chapter-25-course-exercises-faq.md
+
+pi_repo: "https://github.com/zenHeart/pi"
+source_ref: "book"
+source_base: "../"
