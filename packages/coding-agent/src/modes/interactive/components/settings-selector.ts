@@ -24,8 +24,7 @@ import { DynamicBorder } from "./dynamic-border.ts";
 import { keyDisplayText } from "./keybinding-hints.ts";
 import { SelectSubmenu, SteppedSubmenu, type SteppedSubmenuStep } from "./settings-submenu.ts";
 
-const NO_DEFAULT_MODEL_VALUE = "__none__";
-const NO_DEFAULT_MODEL_LABEL = "not set";
+const MODEL_PICKER_LAYOUT = { minPrimaryColumnWidth: 12, maxPrimaryColumnWidth: 46 };
 
 const THINKING_DESCRIPTIONS: Record<ThinkingLevel, string> = {
 	off: "No reasoning",
@@ -50,6 +49,7 @@ const DEFAULT_PROJECT_TRUST_BY_LABEL = new Map(
 export interface SettingsConfig {
 	autoCompact: boolean;
 	defaultModel: string;
+	currentModel?: Model<any>;
 	availableDefaultModels: readonly Model<any>[];
 	showImages: boolean;
 	imageWidthCells: number;
@@ -89,7 +89,6 @@ export interface SettingsConfig {
 
 export interface SettingsCallbacks {
 	onAutoCompactChange: (enabled: boolean) => void;
-	onDefaultModelChange: (model: Model<any>) => Promise<void>;
 	onShowImagesChange: (enabled: boolean) => void;
 	onImageWidthCellsChange: (width: number) => void;
 	onAutoResizeImagesChange: (enabled: boolean) => void;
@@ -99,7 +98,6 @@ export interface SettingsCallbacks {
 	onFollowUpModeChange: (mode: "all" | "one-at-a-time") => void;
 	onTransportChange: (transport: Transport) => void;
 	onHttpIdleTimeoutMsChange: (timeoutMs: number) => void;
-	onThinkingLevelChange: (level: ThinkingLevel) => void;
 	onModelThinkingLevelChange: (provider: string, modelId: string, level: ThinkingLevel) => void;
 	onModelThinkingLevelRemove: (provider: string, modelId: string) => void;
 	onThemeChange: (theme: string) => void;
@@ -177,9 +175,8 @@ function modelSettingKey(model: Model<any>): string {
 	return `${model.provider}/${model.id}`;
 }
 
-function defaultModelDisplayValue(defaultModel: string, overrides: Record<string, ThinkingLevel>): string {
-	const override = overrides[defaultModel];
-	return override ? `${defaultModel} \u00b7 ${override}` : defaultModel;
+function modelDisplayLabel(model: Model<any>): string {
+	return `${model.id} [${model.provider}]`;
 }
 
 function modelThinkingOverridesSummary(overrides: Record<string, ThinkingLevel>): string {
@@ -188,17 +185,8 @@ function modelThinkingOverridesSummary(overrides: Record<string, ThinkingLevel>)
 	return `${count} configured`;
 }
 
-function defaultModelItems(models: readonly Model<any>[]): SelectItem[] {
-	return [...models]
-		.sort((a, b) => {
-			const providerCompare = a.provider.localeCompare(b.provider);
-			if (providerCompare !== 0) return providerCompare;
-			return (a.name || a.id).localeCompare(b.name || b.id);
-		})
-		.map((model) => {
-			const key = modelSettingKey(model);
-			return { value: key, label: key, description: model.name };
-		});
+function modelItemLabel(model: Model<any>): string {
+	return `${model.id} ${theme.fg("muted", `[${model.provider}]`)}`;
 }
 
 function themeItems(availableThemes: string[]): SelectItem[] {
@@ -455,16 +443,14 @@ export class SettingsSelectorComponent extends Container {
 
 		const supportsImages = getCapabilities().images;
 		const followUpKey = keyDisplayText("app.message.followUp");
+		const cycleThinkingKey = keyDisplayText("app.thinking.cycle");
 		let currentWarnings = { ...config.warnings };
 		const currentModelThinkingLevels = { ...config.modelThinkingLevels };
-		let lastSelectedDefaultModel: Model<any> | undefined;
-		const defaultModelOptions = defaultModelItems(config.availableDefaultModels);
 		const defaultModelByValue = new Map(
 			config.availableDefaultModels.map((model) => [modelSettingKey(model), model]),
 		);
-		let currentDefaultModelKey: string | undefined = defaultModelByValue.has(config.defaultModel)
-			? config.defaultModel
-			: undefined;
+		const currentDefaultModelKey = defaultModelByValue.has(config.defaultModel) ? config.defaultModel : undefined;
+		const currentModelKey = config.currentModel ? modelSettingKey(config.currentModel) : undefined;
 
 		const items: SettingItem[] = [
 			{
@@ -495,48 +481,6 @@ export class SettingsSelectorComponent extends Container {
 				description: "Preferred transport for providers that support multiple transports",
 				currentValue: config.transport,
 				values: ["sse", "websocket", "websocket-cached", "auto"],
-			},
-			{
-				id: "default-model",
-				label: "Default model",
-				description: "Startup model for new sessions",
-				currentValue: defaultModelDisplayValue(config.defaultModel, currentModelThinkingLevels),
-				submenu: (currentValue, done) => {
-					const options =
-						defaultModelOptions.length > 0
-							? defaultModelOptions
-							: [
-									{
-										value: NO_DEFAULT_MODEL_VALUE,
-										label: "No models available",
-										description: "Log in to a provider or configure an API key first",
-									},
-								];
-					return new SelectSubmenu(
-						"Default Model",
-						"Select the model to use when starting new sessions",
-						options,
-						currentValue === NO_DEFAULT_MODEL_LABEL ? NO_DEFAULT_MODEL_VALUE : currentValue,
-						(value) => {
-							const model = defaultModelByValue.get(value);
-							if (!model) {
-								done();
-								return;
-							}
-							void callbacks.onDefaultModelChange(model).then(
-								() => {
-									lastSelectedDefaultModel = model;
-									currentDefaultModelKey = value;
-									done(defaultModelDisplayValue(value, currentModelThinkingLevels), {
-										navigateTo: "model-thinking",
-									});
-								},
-								() => done(),
-							);
-						},
-						() => done(),
-					);
-				},
 			},
 			{
 				id: "http-idle-timeout",
@@ -625,36 +569,11 @@ export class SettingsSelectorComponent extends Container {
 					),
 			},
 			{
-				id: "thinking",
-				label: "Default thinking level",
-				description: "Startup reasoning depth for thinking-capable models",
-				currentValue: config.thinkingLevel,
-				submenu: (currentValue, done) =>
-					new SelectSubmenu(
-						"Default Thinking Level",
-						"Select the reasoning depth to use when starting new sessions",
-						config.availableThinkingLevels.map((level) => ({
-							value: level,
-							label: level,
-							description: THINKING_DESCRIPTIONS[level],
-						})),
-						currentValue,
-						(value) => {
-							callbacks.onThinkingLevelChange(value as ThinkingLevel);
-							done(value);
-						},
-						() => done(),
-					),
-			},
-			{
 				id: "model-thinking",
 				label: "Default thinking level per model",
-				description: "Override the default thinking level for specific models",
+				description: `Override the default thinking level for specific models. ${cycleThinkingKey} cycles in-session.`,
 				currentValue: modelThinkingOverridesSummary(currentModelThinkingLevels),
 				submenu: (_currentValue, done) => {
-					const preselected = lastSelectedDefaultModel;
-					lastSelectedDefaultModel = undefined;
-
 					const steps: SteppedSubmenuStep[] = [
 						{
 							key: "model",
@@ -664,23 +583,20 @@ export class SettingsSelectorComponent extends Container {
 								const sorted = [...config.availableDefaultModels].sort((a, b) => {
 									const aKey = modelSettingKey(a);
 									const bKey = modelSettingKey(b);
+									if (aKey === currentModelKey) return -1;
+									if (bKey === currentModelKey) return 1;
 									if (aKey === currentDefaultModelKey) return -1;
 									if (bKey === currentDefaultModelKey) return 1;
-									const pc = a.provider.localeCompare(b.provider);
-									if (pc !== 0) return pc;
-									return (a.name || a.id).localeCompare(b.name || b.id);
+									return a.provider.localeCompare(b.provider);
 								});
 								const items: SelectItem[] = sorted.map((model) => {
 									const key = modelSettingKey(model);
 									const override = currentModelThinkingLevels[key];
-									const isDefault = key === currentDefaultModelKey;
-									const desc = [
-										isDefault ? "default model" : undefined,
-										override ? `thinking: ${override}` : undefined,
-									]
-										.filter(Boolean)
-										.join(" \u00b7 ");
-									return { value: key, label: key, description: desc || undefined };
+									return {
+										value: key,
+										label: modelItemLabel(model),
+										description: override ?? undefined,
+									};
 								});
 								if (items.length === 0) {
 									items.push({
@@ -691,11 +607,16 @@ export class SettingsSelectorComponent extends Container {
 								}
 								return items;
 							},
-							preselect: () => currentDefaultModelKey,
+							preselect: () => currentModelKey ?? currentDefaultModelKey,
+							searchable: true,
+							layout: MODEL_PICKER_LAYOUT,
 						},
 						{
 							key: "level",
-							title: (ctx) => `Thinking Level for ${ctx.model}`,
+							title: (ctx) => {
+								const m = defaultModelByValue.get(ctx.model);
+								return `Thinking Level for ${m ? modelDisplayLabel(m) : ctx.model}`;
+							},
 							description: "Select default thinking level for this model",
 							options: (ctx) => {
 								const model = defaultModelByValue.get(ctx.model);
@@ -741,18 +662,9 @@ export class SettingsSelectorComponent extends Container {
 							}
 						},
 						() => {
-							this.settingsList.updateValue(
-								"default-model",
-								defaultModelDisplayValue(
-									currentDefaultModelKey ?? config.defaultModel,
-									currentModelThinkingLevels,
-								),
-							);
 							done(summary());
 						},
-						preselected
-							? { startAtStep: 1, initialContext: { model: modelSettingKey(preselected) } }
-							: { loop: true },
+						{ loop: true },
 					);
 				},
 			},

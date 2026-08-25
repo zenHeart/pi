@@ -29,7 +29,7 @@ pi --mode rpc
 | 产品层 session | [agent-session.ts#L252](packages/coding-agent/src/core/agent-session.ts#L252) |
 | SDK 汇合点 | [sdk.ts#L202](packages/coding-agent/src/core/sdk.ts#L202) |
 | 通用 Agent loop | [agent-loop.ts#L95](packages/agent/src/agent-loop.ts#L95) |
-| provider stream 分发 | [stream.ts#L43](packages/ai/src/stream.ts#L43) |
+| provider stream 分发 | [compat.ts#L275](packages/ai/src/compat.ts#L275) |
 | 工具注册 | [index.ts#L81](packages/coding-agent/src/core/tools/index.ts#L81) |
 | session 持久化 | [session-manager.ts#L711](packages/coding-agent/src/core/session-manager.ts#L711) |
 | TUI 宿主 | [tui.ts#L239](packages/tui/src/tui.ts#L239) |
@@ -74,7 +74,7 @@ export class AgentSession {
 
 解释：`AgentSession` 是产品层 orchestrator。输入是已经装配好的 agent、settings、session、resources、model registry；输出不是模型文本，而是一组可以被 host 订阅的事件和命令。它持有 runtime 私有状态，例如资源、扩展、工具注册表和 compaction/retry 状态。复刻最小版可以先只保留 `agent`、`sessionManager`、`settingsManager`，但不能把这些状态塞进 provider。
 
-源码位置：[stream.ts#L43](packages/ai/src/stream.ts#L43)。片段之后继续看 stream 如何要求 provider 注册过的 `stream` 函数：[stream.ts#L58](packages/ai/src/stream.ts#L58)。
+源码位置：[compat.ts#L275](packages/ai/src/compat.ts#L275)。片段之后继续看 stream 如何要求 provider 注册过的 `stream` 函数：[compat.ts#L285](packages/ai/src/compat.ts#L285)。
 
 ```ts
 export function streamSimple<TApi extends Api>(

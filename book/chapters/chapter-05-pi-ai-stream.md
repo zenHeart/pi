@@ -24,10 +24,10 @@ pi --model google/gemini-2.5-pro
 | Provider 类型 | [types.ts#L23](packages/ai/src/types.ts#L23) |
 | Context 和 Tool schema | [types.ts#L327](packages/ai/src/types.ts#L327) |
 | stream 事件协议 | [types.ts#L340](packages/ai/src/types.ts#L340) |
-| streamSimple 分发 | [stream.ts#L43](packages/ai/src/stream.ts#L43) |
-| API provider registry | [api-registry.ts#L23](packages/ai/src/api-registry.ts#L23) |
-| registerApiProvider | [api-registry.ts#L66](packages/ai/src/api-registry.ts#L66) |
-| built-in provider lazy stream | [register-builtins.ts#L162](packages/ai/src/providers/register-builtins.ts#L162) |
+| streamSimple 分发 | [compat.ts#L275](packages/ai/src/compat.ts#L275) |
+| API provider registry | [compat.ts#L100](packages/ai/src/compat.ts#L100) |
+| registerApiProvider | [compat.ts#L126](packages/ai/src/compat.ts#L126) |
+| built-in provider lazy stream | [compat.ts#L198](packages/ai/src/compat.ts#L198) |
 
 ## 5.4 生命周期图
 
@@ -76,7 +76,7 @@ export type AssistantMessageEvent =
 
 解释：输入给 provider 的是标准 `Context`，而不是 Pi 的 session entry。输出是标准 assistant stream 事件，而不是 vendor raw event。真实 Pi 事件里，tool call 的完整字段名是 `toolCall`，参数字段在 content block 中叫 `arguments`，custom provider 文档示例见 [custom-provider.md#L512](packages/coding-agent/docs/custom-provider.md#L512)。复刻最小版可以先实现 `start/text_delta/done` 子集，但只要加入工具调用，就必须保留 `toolcall_end.toolCall` 这种真实语义，避免把教学字段 `call/args` 当成 Pi 协议。
 
-源码位置：[api-registry.ts#L66](packages/ai/src/api-registry.ts#L66)。片段之后继续看调用方如何通过 `streamSimple()` 分发：[stream.ts#L43](packages/ai/src/stream.ts#L43)。
+源码位置：[compat.ts#L126](packages/ai/src/compat.ts#L126)。片段之后继续看调用方如何通过 `streamSimple()` 分发：[compat.ts#L275](packages/ai/src/compat.ts#L275)。
 
 ```ts
 export function registerApiProvider<TApi extends Api, TOptions extends StreamOptions>(

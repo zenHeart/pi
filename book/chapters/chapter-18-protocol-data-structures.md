@@ -12,10 +12,10 @@
 |---|---|
 | LLM context | [types.ts#L327](packages/ai/src/types.ts#L327) |
 | Assistant stream event | [types.ts#L340](packages/ai/src/types.ts#L340) |
-| Provider dispatch | [stream.ts#L43](packages/ai/src/stream.ts#L43) |
+| Provider dispatch | [compat.ts#L275](packages/ai/src/compat.ts#L275) |
 | Tool definition | [types.ts#L47](packages/agent/src/types.ts#L47) |
 | Session context build | [session.ts#L22](packages/agent/src/harness/session/session.ts#L22) |
-| JSONL repo | [jsonl-repo.ts#L75](packages/agent/src/harness/session/jsonl-repo.ts#L75) |
+| JSONL repo | [jsonl/repo.ts#L122](packages/agent/src/harness/session/jsonl/repo.ts#L122) |
 | RPC request/response | [rpc-types.ts#L19](packages/coding-agent/src/modes/rpc/rpc-types.ts#L19) |
 | JSON mode docs | [json.md#L9](packages/coding-agent/docs/json.md#L9) |
 | RPC mode docs | [rpc.md#L19](packages/coding-agent/docs/rpc.md#L19) |
@@ -234,7 +234,7 @@ export interface Context {
 
 这段代码定义了模型能看到的全部输入：system prompt、messages、tools。它没有 cwd、session path、auth file、TUI state。mini 版如果把这些 runtime 私有状态塞进 `ModelContext`，就会把模型协议和本地执行边界混在一起。
 
-provider 分发由 `model.api` 决定。源码位置：[stream.ts#L43](packages/ai/src/stream.ts#L43)，返回 provider stream 的位置是 [stream.ts#L48](packages/ai/src/stream.ts#L48)。
+provider 分发由 `model.api` 决定。源码位置：[compat.ts#L275](packages/ai/src/compat.ts#L275)，返回 provider stream 的位置是 [compat.ts#L287](packages/ai/src/compat.ts#L287)。
 
 ```ts
 export function streamSimple<TApi extends Api>(

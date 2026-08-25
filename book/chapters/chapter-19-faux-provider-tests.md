@@ -12,7 +12,7 @@
 |---|---|
 | Agent loop 入口 | [agent-loop.ts#L95](packages/agent/src/agent-loop.ts#L95) |
 | 工具执行入口 | [agent-loop.ts#L628](packages/agent/src/agent-loop.ts#L628) |
-| JSONL repo create | [jsonl-repo.ts#L75](packages/agent/src/harness/session/jsonl-repo.ts#L75) |
+| JSONL repo create | [jsonl/repo.ts#L122](packages/agent/src/harness/session/jsonl/repo.ts#L122) |
 | message append | [session-manager.ts#L876](packages/coding-agent/src/core/session-manager.ts#L876) |
 | compaction result | [compaction.ts#L102](packages/coding-agent/src/core/compaction/compaction.ts#L102) |
 | stdout guard | [output-guard.ts#L45](packages/coding-agent/src/core/output-guard.ts#L45) |
